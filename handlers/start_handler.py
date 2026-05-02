@@ -1,9 +1,18 @@
+<<<<<<< HEAD
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 
 from services.exam_service import get_all_exams
 from handlers.notify_handler import get_notification
 from keyboards.quiz_select_keyboard import exam_keyboard
+=======
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import ContextTypes
+
+from services.exam_service import get_all_exams
+from handlers.notify_handler import get_notification
+from keyboards.quiz_select_keyboard import exam_keyboard
+>>>>>>> 72286ff2e6294b7e17af827ebd9e336761c26627
 from services.user_service import (
     get_or_create_user,
     get_badge,
@@ -17,6 +26,7 @@ from services.premium_service import (
     is_premium_active,
 )
 from utils.helpers import is_double_click
+<<<<<<< HEAD
 
 
 # ---------------- START ----------------
@@ -79,6 +89,70 @@ async def start_buttons_handler(update: Update, context: ContextTypes.DEFAULT_TY
         rank = get_user_rank(user_id)
         rank_badge = get_rank_badge(rank) if rank else ""
 
+=======
+
+
+# ---------------- START ----------------
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    keyboard = [
+        [InlineKeyboardButton("🎯 Quiz", callback_data="start_quiz")],
+        [InlineKeyboardButton("👤 Profile", callback_data="profile")],
+        [InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard")],
+        [InlineKeyboardButton("📢 Updates & notifications", callback_data="updates")],
+        [InlineKeyboardButton("📄 PDFs", callback_data="pdfs")],
+        [InlineKeyboardButton("💎 Premium", callback_data="premium")],
+        [InlineKeyboardButton("📘 User Guide", callback_data="guide")],
+    ]
+
+    await update.message.reply_text(
+        "👋 Welcome to Quiz Bot\n\nSelect an option:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+# ---------------- BUTTON HANDLER ----------------
+async def start_buttons_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+    data = query.data
+
+    await query.answer()
+
+    # 🔒 DOUBLE CLICK PROTECTION
+    if is_double_click(context, "start_click", 1):
+        return
+
+    # 🎯 QUIZ
+    if data == "start_quiz":
+
+        exams = get_all_exams()
+
+        if not exams:
+            await query.message.reply_text("⚠ No exams available")
+            return
+
+        await query.message.reply_text(
+            "📚 Select Exam:",
+            reply_markup=exam_keyboard(exams)
+        )
+
+    # 👤 PROFILE
+    elif data == "profile":
+
+        user_id = query.from_user.id
+        name = query.from_user.first_name
+
+        user = get_or_create_user(user_id, name)
+
+        total = user["correct"] + user["wrong"]
+        accuracy = (user["correct"] / total * 100) if total > 0 else 0
+
+        badge = get_badge(user["score"])
+        rank = get_user_rank(user_id)
+        rank_badge = get_rank_badge(rank) if rank else ""
+
+>>>>>>> 72286ff2e6294b7e17af827ebd9e336761c26627
         msg = (
             f"👤 Profile\n\n"
             f"🧑 Name: {user['name']}\n"
@@ -91,6 +165,7 @@ async def start_buttons_handler(update: Update, context: ContextTypes.DEFAULT_TY
             f"🎖 Badge: {badge}\n"
             f"💎 Premium: {get_status_text(user_id)}"
         )
+<<<<<<< HEAD
 
         await query.message.reply_text(msg)
 
@@ -155,6 +230,72 @@ async def start_buttons_handler(update: Update, context: ContextTypes.DEFAULT_TY
         with open(file_path, "rb") as f:
             await query.message.reply_document(document=f)
 
+=======
+
+        await query.message.reply_text(msg)
+
+    # 🏆 LEADERBOARD
+    elif data == "leaderboard":
+
+        users = get_top_users(10)
+
+        if not users:
+            await query.message.reply_text("⚠ No users yet")
+            return
+
+        msg = "🏆 Leaderboard (Top 10)\n\n"
+
+        for i, u in enumerate(users, 1):
+            badge = get_badge(u["score"])
+            rank_badge = get_rank_badge(i)
+
+            msg += f"{i}. {u['name']} - {u['score']} pts {badge} {rank_badge}\n"
+
+        await query.message.reply_text(msg)
+
+    # 📢 UPDATES
+    elif data == "updates":
+
+        msg = get_notification()
+
+        if not msg:
+            await query.message.reply_text("📢 No updates yet")
+            return
+
+        await query.message.reply_text(f"📢 Latest Update:\n\n{msg}")
+
+    # 📄 PDFs ✅ FIXED
+    elif data == "pdfs":
+
+        from utils.pdf_generator import generate_pdf
+        from services.question_service import get_questions
+
+        exams = get_all_exams()
+
+        if not exams:
+            await query.message.reply_text("⚠ No exams available")
+            return
+
+        exam = exams[0]
+
+        if not exam.get("sets"):
+            await query.message.reply_text("⚠ No sets found")
+            return
+
+        set_id = exam["sets"][0]["id"]
+
+        questions = get_questions(exam["id"], set_id)
+
+        if not questions:
+            await query.message.reply_text("⚠ No questions found")
+            return
+
+        file_path = generate_pdf(questions)
+
+        with open(file_path, "rb") as f:
+            await query.message.reply_document(document=f)
+
+>>>>>>> 72286ff2e6294b7e17af827ebd9e336761c26627
     # 💎 PREMIUM
     elif data == "premium":
         user_id = query.from_user.id
@@ -183,6 +324,7 @@ async def start_buttons_handler(update: Update, context: ContextTypes.DEFAULT_TY
         ]
 
         await query.message.reply_text("\n".join(lines))
+<<<<<<< HEAD
 
     # 📘 GUIDE
     elif data == "guide":
@@ -200,4 +342,23 @@ async def start_buttons_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
     # ⚠️ FALLBACK
     else:
+=======
+
+    # 📘 GUIDE
+    elif data == "guide":
+
+        msg = (
+            "📘 User Guide\n\n"
+            "1. 🎯 Quiz → exam select karke start karo\n"
+            "2. ⏱ Timer ke andar answer do\n"
+            "3. 👤 Profile me score dekho\n"
+            "4. 📄 PDFs se practice karo\n"
+            "5. 💎 Premium se full access lo"
+        )
+
+        await query.message.reply_text(msg)
+
+    # ⚠️ FALLBACK
+    else:
+>>>>>>> 72286ff2e6294b7e17af827ebd9e336761c26627
         await query.message.reply_text("⚠ Invalid option")

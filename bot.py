@@ -1,6 +1,10 @@
 import os
 from threading import Thread
 
+<<<<<<< HEAD
+=======
+from flask import Flask
+>>>>>>> 72286ff2e6294b7e17af827ebd9e336761c26627
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -29,11 +33,23 @@ from services.bootstrap_service import bootstrap_application
 from services.notification_service_db import notification_service
 from services.user_service_db import user_service
 from utils.logging_utils import get_logger, setup_logging
+<<<<<<< HEAD
 from webhook_server import app as webhook_app
+=======
+>>>>>>> 72286ff2e6294b7e17af827ebd9e336761c26627
 
 
 logger = get_logger(__name__)
 INDIA_TZ = ZoneInfo("Asia/Kolkata")
+<<<<<<< HEAD
+=======
+keep_alive_app = Flask(__name__)
+
+
+@keep_alive_app.get("/")
+def keep_alive():
+    return "Bot is running!"
+>>>>>>> 72286ff2e6294b7e17af827ebd9e336761c26627
 
 
 async def error_handler(update, context):
@@ -63,7 +79,11 @@ def _resolve_bot_token() -> str:
 def _start_keep_alive_server():
     port = int(os.environ.get("PORT", "10000"))
     thread = Thread(
+<<<<<<< HEAD
         target=webhook_app.run,
+=======
+        target=keep_alive_app.run,
+>>>>>>> 72286ff2e6294b7e17af827ebd9e336761c26627
         kwargs={
             "host": "0.0.0.0",
             "port": port,

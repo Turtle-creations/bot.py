@@ -112,117 +112,121 @@ async def webhook_debug_get():
 
 @app.route("/pay/<order_id>", methods=["GET"])
 async def payment_page(order_id: str):
-    logger.info("Payment page opened | order_id=%s", order_id)
-    await _trace_payment_step("payment_page_opened", order_id=order_id)
-    order = payment_service.get_order(order_id)
-    if not order:
-        logger.warning("Payment page open failed | order_id=%s reason=order_not_found", order_id)
-        return _render_status_page(
-            title="Payment Details Not Found",
-            message="We could not find this payment order.",
-            detail="The payment may have expired, been cancelled, or the link may be invalid.",
-            status_kind="failure",
+    try:
+        logger.info("Payment page opened | order_id=%s", order_id)
+        await _trace_payment_step("payment_page_opened", order_id=order_id)
+
+        order = payment_service.get_order(order_id)
+        if not order:
+            logger.warning("Payment page open failed | order_id=%s reason=order_not_found", order_id)
+            return "Invalid order_id", 404
+
+        plan_name = SUBSCRIPTION_PLANS.get(order["plan_type"], {}).get("name", "Payment")
+        amount_rupees = order["amount"] / 100
+        checkout_options = {
+            "amount": order["amount"],
+            "currency": order["currency"],
+            "name": "Quiz Bot Premium",
+            "description": plan_name,
+            "order_id": order_id,
+            "notes": {
+                "user_id": str(order["user_id"]),
+                "plan_type": str(order["plan_type"]),
+            },
+            "theme": {"color": "#0f766e"},
+            "retry": {"enabled": True},
+        }
+        logger.info("Checkout options prepared | order_id=%s options=%s", order_id, checkout_options)
+        checkout_options_json = json.dumps(
+            {
+                "key": RAZORPAY_KEY_ID,
+                **checkout_options,
+            }
         )
 
-    plan_name = SUBSCRIPTION_PLANS.get(order["plan_type"], {}).get("name", "Payment")
-    amount_rupees = order["amount"] / 100
-    checkout_options = {
-        "amount": order["amount"],
-        "currency": order["currency"],
-        "name": "Quiz Bot Premium",
-        "description": plan_name,
-        "order_id": order_id,
-        "notes": {
-            "user_id": str(order["user_id"]),
-            "plan_type": str(order["plan_type"]),
-        },
-        "theme": {"color": "#0f766e"},
-        "retry": {"enabled": True},
-    }
-    logger.info("Checkout options prepared | order_id=%s options=%s", order_id, checkout_options)
-    checkout_options_json = json.dumps(
-        {
-            "key": RAZORPAY_KEY_ID,
-            **checkout_options,
-        }
-    )
+        return (
+            f"""
+            <!doctype html>
+            <html>
+            <head>
+              <meta charset="utf-8" />
+              <title>Quiz Bot Premium Payment</title>
+              <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+            </head>
+            <body style="font-family: Arial, sans-serif; max-width: 560px; margin: 40px auto;">
+              <h2>Quiz Bot Premium</h2>
+              <p><b>Plan:</b> {html.escape(plan_name)}</p>
+              <p><b>Amount:</b> INR {amount_rupees:.2f}</p>
+              <p style="color: #4b5563;">Secure checkout is handled entirely by Razorpay. Available UPI and payment methods come directly from Razorpay.</p>
+              <button id="pay-btn" style="padding: 12px 20px; font-size: 16px;">Pay with Razorpay</button>
+              <script>
+                const successUrl = "{PUBLIC_BASE_URL}/payment/success";
+                const cancelUrl = "{PUBLIC_BASE_URL}/payment/cancel?razorpay_order_id={order_id}";
+                const eventUrl = "{PUBLIC_BASE_URL}/payment/event";
+                const failureUrlBase = "{PUBLIC_BASE_URL}/payment/failed?razorpay_order_id={order_id}";
+                const options = {checkout_options_json};
+                function reportEvent(step, extra = {{}}) {{
+                  fetch(eventUrl, {{
+                    method: "POST",
+                    headers: {{ "Content-Type": "application/json" }},
+                    body: JSON.stringify({{ step, order_id: "{order_id}", ...extra }})
+                  }}).catch(() => {{}});
+                }}
+                options.redirect = false;
+                options.handler = function (response) {{
+                  reportEvent("payment_success_callback_received", {{
+                    payment_id: response.razorpay_payment_id || "",
+                    order_id: response.razorpay_order_id || "{order_id}"
+                  }});
+                  console.log("Payment success response:", response);
 
-    return (
-        f"""
-        <!doctype html>
-        <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>Quiz Bot Premium Payment</title>
-          <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-        </head>
-        <body style="font-family: Arial, sans-serif; max-width: 560px; margin: 40px auto;">
-          <h2>Quiz Bot Premium</h2>
-          <p><b>Plan:</b> {html.escape(plan_name)}</p>
-          <p><b>Amount:</b> INR {amount_rupees:.2f}</p>
-          <p style="color: #4b5563;">Secure checkout is handled entirely by Razorpay. Available UPI and payment methods come directly from Razorpay.</p>
-          <button id="pay-btn" style="padding: 12px 20px; font-size: 16px;">Pay with Razorpay</button>
-          <script>
-            const successUrl = "{PUBLIC_BASE_URL}/payment/success";
-            const cancelUrl = "{PUBLIC_BASE_URL}/payment/cancel?razorpay_order_id={order_id}";
-            const eventUrl = "{PUBLIC_BASE_URL}/payment/event";
-            const failureUrlBase = "{PUBLIC_BASE_URL}/payment/failed?razorpay_order_id={order_id}";
-            const options = {checkout_options_json};
-            function reportEvent(step, extra = {{}}) {{
-              fetch(eventUrl, {{
-                method: "POST",
-                headers: {{ "Content-Type": "application/json" }},
-                body: JSON.stringify({{ step, order_id: "{order_id}", ...extra }})
-              }}).catch(() => {{}});
-            }}
-            options.redirect = false;
-            options.handler = function (response) {{
-              reportEvent("payment_success_callback_received", {{
-                payment_id: response.razorpay_payment_id || "",
-                order_id: response.razorpay_order_id || "{order_id}"
-              }});
-              console.log("Payment success response:", response);
+                  const form = document.createElement("form");
+                  form.method = "POST";
+                  form.action = successUrl;
 
-              const form = document.createElement("form");
-              form.method = "POST";
-              form.action = successUrl;
+                  for (const key in response) {{
+                    const input = document.createElement("input");
+                    input.type = "hidden";
+                    input.name = key;
+                    input.value = response[key];
+                    form.appendChild(input);
+                  }}
 
-              for (const key in response) {{
-                const input = document.createElement("input");
-                input.type = "hidden";
-                input.name = key;
-                input.value = response[key];
-                form.appendChild(input);
-              }}
+                  document.body.appendChild(form);
+                  form.submit();
+                }};
+                options.modal = {{
+                  ondismiss: function () {{
+                    reportEvent("checkout_closed", {{ order_id: "{order_id}" }});
+                    alert("Payment cancelled or incomplete");
+                    window.location.href = cancelUrl;
+                  }}
+                }};
 
-              document.body.appendChild(form);
-              form.submit();
-            }};
-            options.modal = {{
-              ondismiss: function () {{
-                reportEvent("checkout_closed", {{ order_id: "{order_id}" }});
-                alert("Payment cancelled or incomplete");
-                window.location.href = cancelUrl;
-              }}
-            }};
-
-            const rzp = new Razorpay(options);
-            rzp.on("payment.failed", function (response) {{
-              const reason = encodeURIComponent(
-                response.error && (response.error.description || response.error.reason || response.error.code) || "payment_failed"
-              );
-              window.location.href = failureUrlBase + "&reason=" + reason;
-            }});
-            document.getElementById("pay-btn").onclick = function (e) {{
-              reportEvent("checkout_opened", {{ order_id: "{order_id}" }});
-              rzp.open();
-              e.preventDefault();
-            }};
-          </script>
-        </body>
-        </html>
-        """
-    )
+                const rzp = new Razorpay(options);
+                rzp.on("payment.failed", function (response) {{
+                  const reason = encodeURIComponent(
+                    response.error && (response.error.description || response.error.reason || response.error.code) || "payment_failed"
+                  );
+                  window.location.href = failureUrlBase + "&reason=" + reason;
+                }});
+                document.getElementById("pay-btn").onclick = function (e) {{
+                  reportEvent("checkout_opened", {{ order_id: "{order_id}" }});
+                  rzp.open();
+                  e.preventDefault();
+                }};
+              </script>
+            </body>
+            </html>
+            """
+        )
+    except Exception as exc:
+        logger.exception(
+            "Payment init failed | order_id=%s error=%s",
+            order_id,
+            str(exc),
+        )
+        return "Payment init failed", 500
 
 
 @app.route("/payment/event", methods=["POST"])
@@ -475,8 +479,7 @@ async def payment_success():
 
 @app.route("/webhook", methods=["POST"])
 @app.route("/webhook/razorpay", methods=["POST"])
-async def razorpay_webhook(
-):
+async def razorpay_webhook():
     x_razorpay_signature = request.headers.get("X-Razorpay-Signature")
     x_razorpay_event_id = request.headers.get("X-Razorpay-Event-Id")
     raw_body = request.get_data()
