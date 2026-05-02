@@ -223,6 +223,48 @@ class PaymentService:
 
         return None, "razorpay_restore_failed"
 
+    def get_order_with_fallback_sync(self, order_id: str) -> tuple[dict | None, str]:
+        order = self.get_order(order_id)
+        if order:
+            return order, "database"
+
+        remote_order = self.fetch_razorpay_order_sync(order_id)
+        if not remote_order:
+            return None, "missing"
+
+        notes = remote_order.get("notes") or {}
+        user_id_raw = notes.get("user_id")
+        plan_type = notes.get("plan_type") or notes.get("purpose") or "unknown"
+        if not str(user_id_raw or "").isdigit():
+            logger.warning(
+                "Remote order cannot be restored locally | order_id=%s reason=missing_user_id notes=%s",
+                order_id,
+                notes,
+            )
+            return None, "razorpay_missing_user_id"
+
+        payment_url = f"{PUBLIC_BASE_URL}/pay/{remote_order['id']}"
+        self._save_order_record(
+            order_id=remote_order["id"],
+            user_id=int(user_id_raw),
+            plan_type=plan_type,
+            amount=int(remote_order.get("amount") or 0),
+            currency=remote_order.get("currency", "INR"),
+            status=remote_order.get("status", "created"),
+            payment_url=payment_url,
+        )
+        restored_order = self.get_order(order_id)
+        if restored_order:
+            logger.info(
+                "Payment order restored from Razorpay | order_id=%s user_id=%s plan_type=%s",
+                order_id,
+                user_id_raw,
+                plan_type,
+            )
+            return restored_order, "razorpay_restored"
+
+        return None, "razorpay_restore_failed"
+
     def update_order_status(self, order_id: str, status: str):
         with database.connection() as conn:
             conn.execute(
@@ -241,12 +283,34 @@ class PaymentService:
             response.raise_for_status()
             return response.json()
 
+    def fetch_razorpay_payment_sync(self, payment_id: str) -> dict | None:
+        if not payment_id or not RAZORPAY_KEY_ID or not RAZORPAY_KEY_SECRET:
+            return None
+
+        with httpx.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET), timeout=20) as client:
+            response = client.get(f"https://api.razorpay.com/v1/payments/{payment_id}")
+            if response.status_code == 404:
+                return None
+            response.raise_for_status()
+            return response.json()
+
     async def fetch_razorpay_order(self, order_id: str) -> dict | None:
         if not order_id or not RAZORPAY_KEY_ID or not RAZORPAY_KEY_SECRET:
             return None
 
         async with httpx.AsyncClient(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET), timeout=20) as client:
             response = await client.get(f"https://api.razorpay.com/v1/orders/{order_id}")
+            if response.status_code == 404:
+                return None
+            response.raise_for_status()
+            return response.json()
+
+    def fetch_razorpay_order_sync(self, order_id: str) -> dict | None:
+        if not order_id or not RAZORPAY_KEY_ID or not RAZORPAY_KEY_SECRET:
+            return None
+
+        with httpx.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET), timeout=20) as client:
+            response = client.get(f"https://api.razorpay.com/v1/orders/{order_id}")
             if response.status_code == 404:
                 return None
             response.raise_for_status()
