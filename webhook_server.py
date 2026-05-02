@@ -472,8 +472,10 @@ def payment_success():
             status_kind="failure",
         )
 
-    payment_service.update_order_status(order_id, "callback_verified")
     final_order = payment_service.get_order(order_id)
+    if final_order and final_order.get("status") not in {"paid", "already_processed"}:
+        payment_service.update_order_status(order_id, "callback_verified")
+        final_order = payment_service.get_order(order_id)
     logger.info(
         "Payment callback signature verified | order_id=%s payment_id=%s remote_payment_status=%s remote_order_status=%s webhook_received=%s final_order_status=%s",
         order_id,
@@ -491,6 +493,14 @@ def payment_success():
         remote_order_status,
         final_order.get("status") if final_order else None,
     )
+    if final_order and final_order.get("status") in {"paid", "already_processed"}:
+        return _render_status_page(
+            title="Payment Successful",
+            message="Your premium payment was verified successfully.",
+            detail="Premium has been activated on your account. You can return to the bot and use /premium_status to confirm it is active.",
+            status_kind="success",
+        )
+
     if not (final_order and final_order.get("status") == "paid"):
         _run_async(
             _trace_payment_step(
@@ -638,7 +648,7 @@ def razorpay_webhook():
             True,
             final_order.get("status") if final_order else None,
         )
-        trace_step = "premium_activated" if result.get("status") == "processed" else "already_processed"
+        trace_step = "premium_activation_success" if result.get("status") == "processed" else "already_processed"
         _run_async(
             _trace_payment_step(
                 trace_step,
