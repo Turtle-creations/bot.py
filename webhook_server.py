@@ -625,21 +625,23 @@ def razorpay_webhook():
         logger.exception("Webhook processing crashed | event_id=%s", derived_event_id)
         return jsonify({"detail": f"Webhook processing failed: {exc}"}), 500
 
-    if result.get("status") == "processed":
+    if result.get("status") in {"processed", "already_processed"}:
         final_order = payment_service.get_order(
             payload.get("payload", {}).get("payment", {}).get("entity", {}).get("order_id")
         )
         logger.info(
-            "Webhook processed successfully | event_id=%s user_id=%s plan_type=%s webhook_received=%s final_order_status=%s",
+            "Webhook processed successfully | event_id=%s user_id=%s plan_type=%s result_status=%s webhook_received=%s final_order_status=%s",
             derived_event_id,
             result.get("user_id"),
             result.get("plan_type"),
+            result.get("status"),
             True,
             final_order.get("status") if final_order else None,
         )
+        trace_step = "premium_activated" if result.get("status") == "processed" else "already_processed"
         _run_async(
             _trace_payment_step(
-                "premium_activated",
+                trace_step,
                 order_id=payload.get("payload", {}).get("payment", {}).get("entity", {}).get("order_id"),
                 payment_id=payload.get("payload", {}).get("payment", {}).get("entity", {}).get("id"),
                 final_status=final_order.get("status") if final_order else None,

@@ -306,8 +306,8 @@ class PaymentService:
                 (event_id,),
             ).fetchone()
             if existing:
-                logger.info("Duplicate webhook ignored | event_id=%s order_id=%s", event_id, order_id)
-                return {"status": "ignored", "reason": "duplicate_event"}
+                logger.info("Duplicate webhook already processed | event_id=%s order_id=%s", event_id, order_id)
+                return {"status": "already_processed", "reason": "duplicate_event"}
 
             order = conn.execute(
                 "SELECT * FROM payment_orders WHERE order_id = ?",
@@ -317,6 +317,24 @@ class PaymentService:
                 raise ValueError("Order not found for captured payment")
 
             order_data = dict(order)
+            existing_payment = conn.execute(
+                "SELECT payment_id FROM payments WHERE payment_id = ? OR order_id = ?",
+                (payment_id, order_id),
+            ).fetchone()
+            if existing_payment:
+                logger.info(
+                    "Captured payment already processed | event_id=%s order_id=%s payment_id=%s order_status=%s",
+                    event_id,
+                    order_id,
+                    payment_id,
+                    order_data.get("status"),
+                )
+                conn.execute(
+                    "INSERT OR REPLACE INTO processed_webhooks (event_id, received_at) VALUES (?, ?)",
+                    (event_id, now_iso()),
+                )
+                return {"status": "already_processed", "reason": "payment_exists"}
+
             expected_amount = order_data["amount"]
             if amount != expected_amount:
                 logger.warning(
@@ -397,6 +415,13 @@ class PaymentService:
                 order_data["user_id"],
                 plan_type,
                 expiry,
+            )
+            logger.info(
+                "premium_activation_success | event_id=%s order_id=%s user_id=%s plan_type=%s final_order_status=paid",
+                event_id,
+                order_id,
+                order_data["user_id"],
+                plan_type,
             )
         else:
             logger.info(
