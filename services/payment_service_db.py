@@ -29,6 +29,78 @@ logger = get_logger(__name__)
 
 
 class PaymentService:
+    def _compute_premium_expiry(self, user: dict, plan_type: str) -> str:
+        plan = SUBSCRIPTION_PLANS[plan_type]
+        now = datetime.now(timezone.utc)
+        current_expiry = user.get("premium_expires_at")
+        if current_expiry:
+            try:
+                current_dt = datetime.fromisoformat(current_expiry)
+                if current_dt.tzinfo is None:
+                    current_dt = current_dt.replace(tzinfo=timezone.utc)
+                start = current_dt if current_dt > now else now
+            except ValueError:
+                start = now
+        else:
+            start = now
+        return (start + timedelta(days=plan["days"])).replace(microsecond=0).isoformat()
+
+    def ensure_premium_active_for_order(self, order_id: str) -> dict:
+        order = self.get_order(order_id)
+        if not order:
+            return {"ok": False, "reason": "order_not_found"}
+        return self.ensure_premium_active_for_order_data(order)
+
+    def ensure_premium_active_for_order_data(self, order_data: dict) -> dict:
+        plan_type = order_data.get("plan_type")
+        if plan_type not in SUBSCRIPTION_PLANS:
+            return {"ok": True, "reason": "non_premium_plan", "activated_now": False}
+
+        user_id = order_data["user_id"]
+        user = user_service.get_user(user_id)
+        if not user:
+            logger.warning(
+                "Premium activation skipped | order_id=%s user_id=%s reason=user_not_found",
+                order_data.get("order_id"),
+                user_id,
+            )
+            return {"ok": False, "reason": "user_not_found"}
+
+        premium_active = bool(user.get("is_premium")) and bool(user.get("premium_expires_at"))
+        if premium_active:
+            try:
+                expiry_dt = datetime.fromisoformat(user["premium_expires_at"])
+                if expiry_dt.tzinfo is None:
+                    expiry_dt = expiry_dt.replace(tzinfo=timezone.utc)
+                if expiry_dt > datetime.now(timezone.utc):
+                    return {
+                        "ok": True,
+                        "reason": "already_active",
+                        "activated_now": False,
+                        "expiry": user["premium_expires_at"],
+                    }
+            except ValueError:
+                pass
+
+        expiry = self._compute_premium_expiry(user, plan_type)
+        user_service.set_premium_expiry(user_id, expiry, True)
+        logger.info(
+            "premium_activation_success | order_id=%s user_id=%s plan_type=%s final_order_status=%s expiry=%s",
+            order_data.get("order_id"),
+            user_id,
+            plan_type,
+            order_data.get("status"),
+            expiry,
+        )
+        return {
+            "ok": True,
+            "reason": "activated",
+            "activated_now": True,
+            "expiry": expiry,
+            "user_id": user_id,
+            "plan_type": plan_type,
+        }
+
     def _save_order_record(
         self,
         *,
@@ -369,10 +441,6 @@ class PaymentService:
                 "SELECT event_id FROM processed_webhooks WHERE event_id = ?",
                 (event_id,),
             ).fetchone()
-            if existing:
-                logger.info("Duplicate webhook already processed | event_id=%s order_id=%s", event_id, order_id)
-                return {"status": "already_processed", "reason": "duplicate_event"}
-
             order = conn.execute(
                 "SELECT * FROM payment_orders WHERE order_id = ?",
                 (order_id,),
@@ -381,11 +449,23 @@ class PaymentService:
                 raise ValueError("Order not found for captured payment")
 
             order_data = dict(order)
+            if existing:
+                activation_result = self.ensure_premium_active_for_order_data(order_data)
+                logger.info("Duplicate webhook already processed | event_id=%s order_id=%s", event_id, order_id)
+                return {
+                    "status": "already_processed",
+                    "reason": "duplicate_event",
+                    "user_id": order_data["user_id"],
+                    "plan_type": order_data["plan_type"],
+                    "activation_result": activation_result,
+                }
+
             existing_payment = conn.execute(
                 "SELECT payment_id FROM payments WHERE payment_id = ? OR order_id = ?",
                 (payment_id, order_id),
             ).fetchone()
             if existing_payment:
+                activation_result = self.ensure_premium_active_for_order_data(order_data)
                 logger.info(
                     "Captured payment already processed | event_id=%s order_id=%s payment_id=%s order_status=%s",
                     event_id,
@@ -397,7 +477,13 @@ class PaymentService:
                     "INSERT OR REPLACE INTO processed_webhooks (event_id, received_at) VALUES (?, ?)",
                     (event_id, now_iso()),
                 )
-                return {"status": "already_processed", "reason": "payment_exists"}
+                return {
+                    "status": "already_processed",
+                    "reason": "payment_exists",
+                    "user_id": order_data["user_id"],
+                    "plan_type": order_data["plan_type"],
+                    "activation_result": activation_result,
+                }
 
             expected_amount = order_data["amount"]
             if amount != expected_amount:
@@ -415,7 +501,6 @@ class PaymentService:
             should_activate_premium = plan_type in SUBSCRIPTION_PLANS
 
             if should_activate_premium:
-                plan = SUBSCRIPTION_PLANS[plan_type]
                 user = user_service.get_user(order_data["user_id"])
                 if not user:
                     logger.warning(
@@ -425,21 +510,7 @@ class PaymentService:
                         order_data["user_id"],
                     )
                     raise ValueError("User not found for captured payment")
-
-                now = datetime.now(timezone.utc)
-                current_expiry = user.get("premium_expires_at")
-                if current_expiry:
-                    try:
-                        current_dt = datetime.fromisoformat(current_expiry)
-                        if current_dt.tzinfo is None:
-                            current_dt = current_dt.replace(tzinfo=timezone.utc)
-                        start = current_dt if current_dt > now else now
-                    except ValueError:
-                        start = now
-                else:
-                    start = now
-
-                expiry = (start + timedelta(days=plan["days"])).replace(microsecond=0).isoformat()
+                expiry = self._compute_premium_expiry(user, plan_type)
 
             conn.execute(
                 "INSERT INTO processed_webhooks (event_id, received_at) VALUES (?, ?)",
@@ -470,24 +541,8 @@ class PaymentService:
                 ("paid", order_id),
             )
 
-        if should_activate_premium:
-            user_service.set_premium_expiry(order_data["user_id"], expiry, True)
-            logger.info(
-                "Premium activation success | event_id=%s order_id=%s user_id=%s plan_type=%s expiry=%s",
-                event_id,
-                order_id,
-                order_data["user_id"],
-                plan_type,
-                expiry,
-            )
-            logger.info(
-                "premium_activation_success | event_id=%s order_id=%s user_id=%s plan_type=%s final_order_status=paid",
-                event_id,
-                order_id,
-                order_data["user_id"],
-                plan_type,
-            )
-        else:
+        activation_result = self.ensure_premium_active_for_order(order_id)
+        if not should_activate_premium:
             logger.info(
                 "Webhook payment recorded without premium activation | event_id=%s order_id=%s plan_type=%s",
                 event_id,
@@ -500,6 +555,7 @@ class PaymentService:
             "user_id": order_data["user_id"],
             "plan_type": plan_type,
             "expiry": expiry,
+            "activation_result": activation_result,
         }
 
     def premium_status_text(self, user: dict) -> str:

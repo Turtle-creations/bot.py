@@ -17,6 +17,16 @@ logger = get_logger(__name__)
 
 app = Flask(__name__)
 _TELEGRAM_QUEUE: Queue[dict] = Queue()
+_ADMIN_DEBUG_STEPS = {
+    "webhook_received",
+    "webhook_signature_invalid",
+    "webhook_signature_valid",
+    "payment_signature_invalid",
+    "webhook_not_received",
+    "premium_activation_success",
+    "already_processed",
+    "premium_not_activated",
+}
 
 
 def _admin_chat_ids() -> list[int]:
@@ -76,6 +86,9 @@ def _enqueue_telegram_message(chat_id: int, text: str):
 
 
 def _notify_payment_debug(step: str, **fields):
+    if step not in _ADMIN_DEBUG_STEPS:
+        return
+
     details = " ".join(f"{key}={value}" for key, value in fields.items() if value is not None)
     text = f"[PAYMENT DEBUG] step={step}"
     if details:
@@ -98,6 +111,8 @@ def _render_status_page(
     status_kind: str,
     action_url: str | None = None,
     action_label: str | None = None,
+    auto_redirect_url: str | None = None,
+    auto_redirect_delay_ms: int | None = None,
 ) -> str:
     palette = {
         "success": ("#15803d", "Verified"),
@@ -112,6 +127,7 @@ def _render_status_page(
         <head>
           <meta charset="utf-8" />
           <title>{html.escape(title)}</title>
+          {f'<meta http-equiv="refresh" content="{max(1, int((auto_redirect_delay_ms or 3000) / 1000))};url={html.escape(auto_redirect_url or "")}" />' if auto_redirect_url and auto_redirect_delay_ms else ""}
         </head>
         <body style="font-family: Arial, sans-serif; max-width: 640px; margin: 48px auto; padding: 0 16px;">
           <div style="border: 1px solid #e5e7eb; border-radius: 16px; padding: 24px;">
@@ -121,8 +137,10 @@ def _render_status_page(
             <h2 style="margin-top: 16px; color: {accent};">{html.escape(title)}</h2>
             <p style="font-size: 16px; line-height: 1.6;">{html.escape(message)}</p>
             <p style="color: #4b5563; line-height: 1.6;">{html.escape(detail)}</p>
+            {f'<p style="color: #6b7280;">Redirecting in {max(1, int((auto_redirect_delay_ms or 3000) / 1000))} seconds...</p>' if auto_redirect_url and auto_redirect_delay_ms else ""}
             {f'<p style="margin-top: 20px;"><a href="{html.escape(action_url or "")}" style="display: inline-block; background: {accent}; color: white; text-decoration: none; padding: 12px 18px; border-radius: 10px; font-weight: 700;">{html.escape(action_label or "Open")}</a></p>' if action_url and action_label else ""}
           </div>
+          {f'<script>setTimeout(function () {{ window.location.href = {json.dumps(auto_redirect_url)}; }}, {int(auto_redirect_delay_ms or 3000)});</script>' if auto_redirect_url and auto_redirect_delay_ms else ""}
         </body>
         </html>
         """
@@ -506,6 +524,28 @@ def payment_success():
         final_order.get("status") if final_order else None,
     )
     if final_order and final_order.get("status") in {"paid", "already_processed"}:
+        activation_result = payment_service.ensure_premium_active_for_order(order_id)
+        if not activation_result.get("ok"):
+            logger.warning(
+                "Payment success could not confirm premium activation | order_id=%s final_order_status=%s reason=%s",
+                order_id,
+                final_order.get("status"),
+                activation_result.get("reason"),
+            )
+            return _render_status_page(
+                title="Payment Received",
+                message="Your payment was received.",
+                detail="We are finalizing premium activation. Please return to the bot and use /premium_status in a moment.",
+                status_kind="pending",
+                action_url=_resolve_bot_link(),
+                action_label="Return to Bot",
+            )
+        logger.info(
+            "redirecting_to_bot | order_id=%s final_order_status=%s activation_result=%s",
+            order_id,
+            final_order.get("status"),
+            activation_result.get("reason"),
+        )
         return _render_status_page(
             title="Payment Successful",
             message="Your premium payment was verified successfully.",
@@ -513,6 +553,8 @@ def payment_success():
             status_kind="success",
             action_url=_resolve_bot_link(),
             action_label="Return to Bot",
+            auto_redirect_url=_resolve_bot_link(),
+            auto_redirect_delay_ms=3000,
         )
 
     if not (final_order and final_order.get("status") == "paid"):
@@ -659,7 +701,8 @@ def razorpay_webhook():
             payment_id=payload.get("payload", {}).get("payment", {}).get("entity", {}).get("id"),
             final_status=final_order.get("status") if final_order else None,
         )
-        if result.get("status") == "processed" and result.get("user_id"):
+        activation_result = result.get("activation_result") or {}
+        if activation_result.get("activated_now") and result.get("user_id"):
             _enqueue_telegram_message(
                 int(result["user_id"]),
                 "✅ Premium activated successfully. Use /premium_status",
