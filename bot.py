@@ -1,4 +1,5 @@
 import os
+import time
 from threading import Thread
 
 from telegram.ext import (
@@ -53,6 +54,8 @@ def _start_keep_alive_server():
         daemon=True,
     )
     thread.start()
+    logger.info("Flask server started | host=0.0.0.0 port=%s", port)
+    return thread
 
 
 def build_application() -> Application:
@@ -89,10 +92,15 @@ def build_application() -> Application:
 
 
 def main():
-    _start_keep_alive_server()
-    application = build_application()
-    logger.info("Quiz bot is starting")
-    application.run_polling(drop_pending_updates=True)
+    flask_thread = _start_keep_alive_server()
+    try:
+        application = build_application()
+        logger.info("Quiz bot is starting")
+        application.run_polling(drop_pending_updates=True)
+    except Exception:
+        logger.exception("Bot startup/polling failed; keeping Flask server alive for Render")
+        while flask_thread.is_alive():
+            time.sleep(60)
 
 
 if __name__ == "__main__":
