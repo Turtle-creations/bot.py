@@ -29,6 +29,55 @@ logger = get_logger(__name__)
 
 
 class PaymentService:
+    def _save_order_record(
+        self,
+        *,
+        order_id: str,
+        user_id: int,
+        plan_type: str,
+        amount: int,
+        currency: str,
+        status: str,
+        payment_url: str,
+    ):
+        database.initialize()
+        with database.connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO payment_orders (
+                    order_id, user_id, plan_type, amount, currency, status, payment_url, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    order_id,
+                    user_id,
+                    plan_type,
+                    amount,
+                    currency,
+                    status,
+                    payment_url,
+                    now_iso(),
+                ),
+            )
+            saved_row = conn.execute(
+                """
+                SELECT order_id, user_id, plan_type, amount, currency, status, payment_url, created_at
+                FROM payment_orders
+                WHERE order_id = ?
+                """,
+                (order_id,),
+            ).fetchone()
+        logger.info(
+            "Payment order saved | order_id=%s row_exists=%s user_id=%s plan_type=%s amount=%s currency=%s status=%s",
+            order_id,
+            bool(saved_row),
+            user_id,
+            plan_type,
+            amount,
+            currency,
+            status,
+        )
+
     def get_missing_configuration(self) -> list[str]:
         missing = []
 
@@ -68,24 +117,15 @@ class PaymentService:
             order = response.json()
 
         payment_url = f"{PUBLIC_BASE_URL}/pay/{order['id']}"
-        with database.connection() as conn:
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO payment_orders (
-                    order_id, user_id, plan_type, amount, currency, status, payment_url, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    order["id"],
-                    user_id,
-                    plan_type,
-                    plan["amount"],
-                    order.get("currency", "INR"),
-                    order.get("status", "created"),
-                    payment_url,
-                    now_iso(),
-                ),
-            )
+        self._save_order_record(
+            order_id=order["id"],
+            user_id=user_id,
+            plan_type=plan_type,
+            amount=plan["amount"],
+            currency=order.get("currency", "INR"),
+            status=order.get("status", "created"),
+            payment_url=payment_url,
+        )
 
         return {
             "order_id": order["id"],
@@ -115,24 +155,15 @@ class PaymentService:
             order = response.json()
 
         payment_url = f"{PUBLIC_BASE_URL}/pay/{order['id']}"
-        with database.connection() as conn:
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO payment_orders (
-                    order_id, user_id, plan_type, amount, currency, status, payment_url, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    order["id"],
-                    user_id,
-                    "test_order",
-                    payload["amount"],
-                    order.get("currency", "INR"),
-                    order.get("status", "created"),
-                    payment_url,
-                    now_iso(),
-                ),
-            )
+        self._save_order_record(
+            order_id=order["id"],
+            user_id=user_id,
+            plan_type="test_order",
+            amount=payload["amount"],
+            currency=order.get("currency", "INR"),
+            status=order.get("status", "created"),
+            payment_url=payment_url,
+        )
 
         return {
             "order_id": order["id"],
@@ -149,6 +180,48 @@ class PaymentService:
                 (order_id,),
             ).fetchone()
         return dict(row) if row else None
+
+    async def get_order_with_fallback(self, order_id: str) -> tuple[dict | None, str]:
+        order = self.get_order(order_id)
+        if order:
+            return order, "database"
+
+        remote_order = await self.fetch_razorpay_order(order_id)
+        if not remote_order:
+            return None, "missing"
+
+        notes = remote_order.get("notes") or {}
+        user_id_raw = notes.get("user_id")
+        plan_type = notes.get("plan_type") or notes.get("purpose") or "unknown"
+        if not str(user_id_raw or "").isdigit():
+            logger.warning(
+                "Remote order cannot be restored locally | order_id=%s reason=missing_user_id notes=%s",
+                order_id,
+                notes,
+            )
+            return None, "razorpay_missing_user_id"
+
+        payment_url = f"{PUBLIC_BASE_URL}/pay/{remote_order['id']}"
+        self._save_order_record(
+            order_id=remote_order["id"],
+            user_id=int(user_id_raw),
+            plan_type=plan_type,
+            amount=int(remote_order.get("amount") or 0),
+            currency=remote_order.get("currency", "INR"),
+            status=remote_order.get("status", "created"),
+            payment_url=payment_url,
+        )
+        restored_order = self.get_order(order_id)
+        if restored_order:
+            logger.info(
+                "Payment order restored from Razorpay | order_id=%s user_id=%s plan_type=%s",
+                order_id,
+                user_id_raw,
+                plan_type,
+            )
+            return restored_order, "razorpay_restored"
+
+        return None, "razorpay_restore_failed"
 
     def update_order_status(self, order_id: str, status: str):
         with database.connection() as conn:

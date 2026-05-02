@@ -121,10 +121,16 @@ def payment_page(order_id: str):
         logger.info("Payment page opened | order_id=%s", order_id)
         _run_async(_trace_payment_step("payment_page_opened", order_id=order_id))
 
-        order = payment_service.get_order(order_id)
+        order, order_source = _run_async(payment_service.get_order_with_fallback(order_id))
         if not order:
-            logger.warning("Payment page open failed | order_id=%s reason=order_not_found", order_id)
+            logger.warning(
+                "Payment page open failed | order_id=%s reason=order_not_found available_order_source=%s",
+                order_id,
+                order_source,
+            )
             return "Invalid order_id", 404
+
+        logger.info("Payment page order resolved | order_id=%s source=%s", order_id, order_source)
 
         plan_name = SUBSCRIPTION_PLANS.get(order["plan_type"], {}).get("name", "Payment")
         amount_rupees = order["amount"] / 100
@@ -523,7 +529,7 @@ def razorpay_webhook():
     preview_event_name = payload_preview.get("event")
     logger.info(
         "Incoming webhook request | path=%s method=%s headers=%s body=%s",
-        request.url.path,
+        request.path,
         request.method,
         headers_dict,
         body_text,
