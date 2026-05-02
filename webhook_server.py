@@ -1,3 +1,4 @@
+import asyncio
 import html
 import hashlib
 import json
@@ -24,6 +25,10 @@ def _admin_chat_ids() -> list[int]:
 
 def _resolve_bot_token() -> str:
     return os.environ.get("TOKEN") or os.environ.get("BOT_TOKEN") or TELEGRAM_TOKEN or ""
+
+
+def _run_async(coro):
+    return asyncio.run(coro)
 
 
 async def _notify_payment_debug(step: str, **fields):
@@ -100,21 +105,21 @@ def index():
 
 
 @app.route("/health", methods=["GET"])
-async def health():
+def health():
     return "OK"
 
 
 @app.route("/webhook", methods=["GET"])
-async def webhook_debug_get():
+def webhook_debug_get():
     logger.info("Webhook debug GET hit | route=/webhook")
     return "Webhook endpoint is live. Configure Razorpay to send POST requests to this URL."
 
 
 @app.route("/pay/<order_id>", methods=["GET"])
-async def payment_page(order_id: str):
+def payment_page(order_id: str):
     try:
         logger.info("Payment page opened | order_id=%s", order_id)
-        await _trace_payment_step("payment_page_opened", order_id=order_id)
+        _run_async(_trace_payment_step("payment_page_opened", order_id=order_id))
 
         order = payment_service.get_order(order_id)
         if not order:
@@ -230,19 +235,21 @@ async def payment_page(order_id: str):
 
 
 @app.route("/payment/event", methods=["POST"])
-async def payment_event():
+def payment_event():
     payload = request.get_json(silent=True) or {}
     step = payload.get("step") or "unknown"
-    await _trace_payment_step(
-        step,
-        order_id=payload.get("order_id"),
-        payment_id=payload.get("payment_id"),
+    _run_async(
+        _trace_payment_step(
+            step,
+            order_id=payload.get("order_id"),
+            payment_id=payload.get("payment_id"),
+        )
     )
     return jsonify({"status": "ok"})
 
 
 @app.route("/payment/cancel", methods=["GET"])
-async def payment_cancel(razorpay_order_id: str | None = None):
+def payment_cancel(razorpay_order_id: str | None = None):
     razorpay_order_id = razorpay_order_id or request.args.get("razorpay_order_id")
     if razorpay_order_id:
         payment_service.update_order_status(razorpay_order_id, "cancelled")
@@ -252,10 +259,12 @@ async def payment_cancel(razorpay_order_id: str | None = None):
         razorpay_order_id,
         final_order.get("status") if final_order else None,
     )
-    await _trace_payment_step(
-        "checkout_closed",
-        order_id=razorpay_order_id,
-        final_status=final_order.get("status") if final_order else None,
+    _run_async(
+        _trace_payment_step(
+            "checkout_closed",
+            order_id=razorpay_order_id,
+            final_status=final_order.get("status") if final_order else None,
+        )
     )
     return _render_status_page(
         title="Payment Cancelled",
@@ -266,7 +275,7 @@ async def payment_cancel(razorpay_order_id: str | None = None):
 
 
 @app.route("/payment/failed", methods=["GET"])
-async def payment_failed(
+def payment_failed(
     razorpay_order_id: str | None = None,
     reason: str | None = None,
 ):
@@ -281,10 +290,12 @@ async def payment_failed(
         reason,
         final_order.get("status") if final_order else None,
     )
-    await _trace_payment_step(
-        "payment_incomplete",
-        order_id=razorpay_order_id,
-        final_status=final_order.get("status") if final_order else None,
+    _run_async(
+        _trace_payment_step(
+            "payment_incomplete",
+            order_id=razorpay_order_id,
+            final_status=final_order.get("status") if final_order else None,
+        )
     )
     return _render_status_page(
         title="Payment Not Completed",
@@ -295,7 +306,7 @@ async def payment_failed(
 
 
 @app.route("/payment/success", methods=["GET", "POST"])
-async def payment_success():
+def payment_success():
     form_data = {}
     if request.method == "POST":
         try:
@@ -331,11 +342,13 @@ async def payment_success():
             bool(final_order and final_order.get("status") == "paid"),
             final_order.get("status") if final_order else None,
         )
-        await _trace_payment_step(
-            "empty_callback_ignored",
-            order_id=raw_order_id,
-            payment_id=raw_payment_id or "missing",
-            final_status=final_order.get("status") if final_order else None,
+        _run_async(
+            _trace_payment_step(
+                "empty_callback_ignored",
+                order_id=raw_order_id,
+                payment_id=raw_payment_id or "missing",
+                final_status=final_order.get("status") if final_order else None,
+            )
         )
         return _render_status_page(
             title="Payment Not Completed",
@@ -353,20 +366,24 @@ async def payment_success():
         payment_id,
         request.method,
     )
-    await _trace_payment_step(
-        "payment_success_callback_received",
-        order_id=order_id,
-        payment_id=payment_id,
+    _run_async(
+        _trace_payment_step(
+            "payment_success_callback_received",
+            order_id=order_id,
+            payment_id=payment_id,
+        )
     )
     logger.info(
         "Payment callback payment id status | order_id=%s payment_id_received=%s",
         order_id,
         True,
     )
-    await _trace_payment_step(
-        "payment_id_check",
-        order_id=order_id,
-        payment_id=payment_id,
+    _run_async(
+        _trace_payment_step(
+            "payment_id_check",
+            order_id=order_id,
+            payment_id=payment_id,
+        )
     )
 
     order = payment_service.get_order(order_id)
@@ -394,11 +411,13 @@ async def payment_success():
             bool(final_order and final_order.get("status") == "paid"),
             final_order.get("status") if final_order else None,
         )
-        await _trace_payment_step(
-            "payment_signature_invalid",
-            order_id=order_id,
-            payment_id=payment_id,
-            final_status=final_order.get("status") if final_order else None,
+        _run_async(
+            _trace_payment_step(
+                "payment_signature_invalid",
+                order_id=order_id,
+                payment_id=payment_id,
+                final_status=final_order.get("status") if final_order else None,
+            )
         )
         return _render_status_page(
             title="Payment Verification Failed",
@@ -407,16 +426,18 @@ async def payment_success():
             status_kind="failure",
         )
 
-    remote_payment = await payment_service.fetch_razorpay_payment(payment_id)
-    remote_order = await payment_service.fetch_razorpay_order(order_id)
+    remote_payment = _run_async(payment_service.fetch_razorpay_payment(payment_id))
+    remote_order = _run_async(payment_service.fetch_razorpay_order(order_id))
     remote_payment_status = (remote_payment or {}).get("status")
     remote_order_status = (remote_order or {}).get("status")
-    await _trace_payment_step(
-        "razorpay_backend_status",
-        order_id=order_id,
-        payment_id=payment_id,
-        payment_status=remote_payment_status or "missing",
-        order_status=remote_order_status or "missing",
+    _run_async(
+        _trace_payment_step(
+            "razorpay_backend_status",
+            order_id=order_id,
+            payment_id=payment_id,
+            payment_status=remote_payment_status or "missing",
+            order_status=remote_order_status or "missing",
+        )
     )
     if remote_payment_status != "captured":
         payment_service.update_order_status(order_id, "callback_incomplete")
@@ -430,11 +451,13 @@ async def payment_success():
             bool(final_order and final_order.get("status") == "paid"),
             final_order.get("status") if final_order else None,
         )
-        await _trace_payment_step(
-            "webhook_not_received",
-            order_id=order_id,
-            payment_id=payment_id,
-            final_status=final_order.get("status") if final_order else None,
+        _run_async(
+            _trace_payment_step(
+                "webhook_not_received",
+                order_id=order_id,
+                payment_id=payment_id,
+                final_status=final_order.get("status") if final_order else None,
+            )
         )
         return _render_status_page(
             title="Payment Not Completed",
@@ -463,11 +486,13 @@ async def payment_success():
         final_order.get("status") if final_order else None,
     )
     if not (final_order and final_order.get("status") == "paid"):
-        await _trace_payment_step(
-            "webhook_not_received",
-            order_id=order_id,
-            payment_id=payment_id,
-            final_status=final_order.get("status") if final_order else None,
+        _run_async(
+            _trace_payment_step(
+                "webhook_not_received",
+                order_id=order_id,
+                payment_id=payment_id,
+                final_status=final_order.get("status") if final_order else None,
+            )
         )
     return _render_status_page(
         title="Payment Verification Received",
@@ -479,7 +504,7 @@ async def payment_success():
 
 @app.route("/webhook", methods=["POST"])
 @app.route("/webhook/razorpay", methods=["POST"])
-async def razorpay_webhook():
+def razorpay_webhook():
     x_razorpay_signature = request.headers.get("X-Razorpay-Signature")
     x_razorpay_event_id = request.headers.get("X-Razorpay-Event-Id")
     raw_body = request.get_data()
@@ -510,20 +535,24 @@ async def razorpay_webhook():
         preview_order_id,
         preview_final_order.get("status") if preview_final_order else None,
     )
-    await _trace_payment_step(
-        "webhook_received",
-        order_id=preview_order_id,
-        payment_id=preview_payment_id,
-        final_status=preview_final_order.get("status") if preview_final_order else None,
+    _run_async(
+        _trace_payment_step(
+            "webhook_received",
+            order_id=preview_order_id,
+            payment_id=preview_payment_id,
+            final_status=preview_final_order.get("status") if preview_final_order else None,
+        )
     )
 
     if not x_razorpay_signature:
         logger.warning("Webhook rejected | event_id=%s reason=missing_signature", x_razorpay_event_id)
-        await _trace_payment_step(
-            "webhook_signature_invalid",
-            order_id=preview_order_id,
-            payment_id=preview_payment_id,
-            final_status=preview_final_order.get("status") if preview_final_order else None,
+        _run_async(
+            _trace_payment_step(
+                "webhook_signature_invalid",
+                order_id=preview_order_id,
+                payment_id=preview_payment_id,
+                final_status=preview_final_order.get("status") if preview_final_order else None,
+            )
         )
         return jsonify({"detail": "Missing Razorpay signature"}), 400
 
@@ -536,11 +565,13 @@ async def razorpay_webhook():
             preview_payment_id,
             preview_event_name,
         )
-        await _trace_payment_step(
-            "webhook_signature_invalid",
-            order_id=preview_order_id,
-            payment_id=preview_payment_id,
-            final_status=preview_final_order.get("status") if preview_final_order else None,
+        _run_async(
+            _trace_payment_step(
+                "webhook_signature_invalid",
+                order_id=preview_order_id,
+                payment_id=preview_payment_id,
+                final_status=preview_final_order.get("status") if preview_final_order else None,
+            )
         )
         return jsonify({"detail": "Invalid webhook signature"}), 401
 
@@ -551,11 +582,13 @@ async def razorpay_webhook():
         preview_payment_id,
         preview_event_name,
     )
-    await _trace_payment_step(
-        "webhook_signature_valid",
-        order_id=preview_order_id,
-        payment_id=preview_payment_id,
-        final_status=preview_final_order.get("status") if preview_final_order else None,
+    _run_async(
+        _trace_payment_step(
+            "webhook_signature_valid",
+            order_id=preview_order_id,
+            payment_id=preview_payment_id,
+            final_status=preview_final_order.get("status") if preview_final_order else None,
+        )
     )
     if payload_preview:
         payload = payload_preview
@@ -598,18 +631,22 @@ async def razorpay_webhook():
             True,
             final_order.get("status") if final_order else None,
         )
-        await _trace_payment_step(
-            "premium_activated",
-            order_id=payload.get("payload", {}).get("payment", {}).get("entity", {}).get("order_id"),
-            payment_id=payload.get("payload", {}).get("payment", {}).get("entity", {}).get("id"),
-            final_status=final_order.get("status") if final_order else None,
+        _run_async(
+            _trace_payment_step(
+                "premium_activated",
+                order_id=payload.get("payload", {}).get("payment", {}).get("entity", {}).get("order_id"),
+                payment_id=payload.get("payload", {}).get("payment", {}).get("entity", {}).get("id"),
+                final_status=final_order.get("status") if final_order else None,
+            )
         )
     else:
-        await _trace_payment_step(
-            "premium_not_activated",
-            order_id=payload.get("payload", {}).get("payment", {}).get("entity", {}).get("order_id"),
-            payment_id=payload.get("payload", {}).get("payment", {}).get("entity", {}).get("id"),
-            final_status=result.get("status"),
+        _run_async(
+            _trace_payment_step(
+                "premium_not_activated",
+                order_id=payload.get("payload", {}).get("payment", {}).get("entity", {}).get("order_id"),
+                payment_id=payload.get("payload", {}).get("payment", {}).get("entity", {}).get("id"),
+                final_status=result.get("status"),
+            )
         )
 
     return jsonify(result)
