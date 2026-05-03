@@ -1,4 +1,5 @@
 import os
+from threading import Thread
 
 from telegram import Update
 from telegram.ext import (
@@ -29,6 +30,7 @@ from handlers.support_v1 import support_text_router
 from services.bootstrap_service import bootstrap_application
 from services.notification_service_db import notification_service
 from utils.logging_utils import get_logger, setup_logging
+from webhook_server import app as webhook_app
 
 logger = get_logger(__name__)
 INDIA_TZ = ZoneInfo("Asia/Kolkata")
@@ -81,6 +83,23 @@ def _resolve_bot_token() -> str:
         raise RuntimeError("Telegram bot token is missing.")
     return token
 
+
+def _start_web_server() -> Thread:
+    port = int(os.environ.get("PORT", "10000"))
+    thread = Thread(
+        target=webhook_app.run,
+        kwargs={
+            "host": "0.0.0.0",
+            "port": port,
+            "use_reloader": False,
+            "threaded": True,
+        },
+        daemon=True,
+    )
+    thread.start()
+    logger.info("Flask server started | host=0.0.0.0 port=%s", port)
+    return thread
+
 def build_application() -> Application:
     setup_logging()
     logger.info("Bot build start")
@@ -119,7 +138,9 @@ def build_application() -> Application:
 
 
 def main():
+    setup_logging()
     logger.info("Bot main start")
+    _start_web_server()
     application = build_application()
     logger.info("Quiz bot is starting | polling_about_to_start=1")
     logger.info("Calling application.run_polling()")
