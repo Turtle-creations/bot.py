@@ -565,6 +565,13 @@ def payment_success():
                 remote_payment_status,
                 remote_order_status,
             )
+            logger.warning(
+                "payment_not_captured_blocked | order_id=%s payment_id=%s remote_payment_status=%s remote_order_status=%s",
+                order_id,
+                payment_id,
+                remote_payment_status,
+                remote_order_status,
+            )
             _trace_payment_step(
                 "webhook_not_received",
                 order_id=order_id,
@@ -640,67 +647,12 @@ def payment_success():
                 action_label="Return to Bot" if _resolve_bot_link() else None,
             )
 
-        if final_order and final_order.get("status") == "paid":
-            try:
-                logger.info(
-                    "premium activation start | source=payment_success order_id=%s payment_id=%s final_order_status=%s",
-                    order_id,
-                    payment_id,
-                    final_order.get("status"),
-                )
-                activation_result = payment_service.ensure_premium_active_for_order(order_id)
-                logger.info(
-                    "premium activation end | source=payment_success order_id=%s payment_id=%s ok=%s reason=%s",
-                    order_id,
-                    payment_id,
-                    activation_result.get("ok"),
-                    activation_result.get("reason"),
-                )
-            except Exception:
-                logger.exception(
-                    "Payment success activation crashed | order_id=%s payment_id=%s final_order_status=%s",
-                    order_id,
-                    payment_id,
-                    final_order.get("status"),
-                )
-                route_outcome = "activation_exception"
-                return _render_status_page(
-                    title="Payment Received",
-                    message="Your payment was received.",
-                    detail="We are finalizing premium activation safely. Please return to the bot and use /premium_status in a moment.",
-                    status_kind="pending",
-                    action_url=_resolve_bot_link() or None,
-                    action_label="Return to Bot" if _resolve_bot_link() else None,
-                )
-
-            if not activation_result.get("ok"):
-                logger.warning(
-                    "premium_activation_blocked_reason | order_id=%s payment_id=%s reason=%s",
-                    order_id,
-                    payment_id,
-                    activation_result.get("reason"),
-                )
-                logger.warning(
-                    "Payment success could not confirm premium activation | order_id=%s final_order_status=%s reason=%s",
-                    order_id,
-                    final_order.get("status"),
-                    activation_result.get("reason"),
-                )
-                route_outcome = "activation_pending"
-                return _render_status_page(
-                    title="Payment Received",
-                    message="Your payment was received.",
-                    detail="We are finalizing premium activation. Please return to the bot and use /premium_status in a moment.",
-                    status_kind="pending",
-                    action_url=_resolve_bot_link() or None,
-                    action_label="Return to Bot" if _resolve_bot_link() else None,
-                )
+        if final_order and final_order.get("status") in {"paid", "already_processed"}:
             logger.info(
-                "redirecting_to_bot | order_id=%s payment_id=%s final_order_status=%s activation_result=%s redirect_url=%s fallback_url=%s",
+                "redirecting_to_bot | order_id=%s payment_id=%s final_order_status=%s redirect_url=%s fallback_url=%s",
                 order_id,
                 payment_id,
                 final_order.get("status"),
-                activation_result.get("reason"),
                 _resolve_bot_link(),
                 _resolve_bot_deep_link(),
             )
@@ -708,7 +660,7 @@ def payment_success():
             return _render_status_page(
                 title="Payment Successful",
                 message="Your premium payment was verified successfully.",
-                detail="Premium has been activated on your account. You can return to the bot and use /premium_status to confirm it is active.",
+                detail="Payment verification is complete. Premium activation happens only from the verified Razorpay webhook, so please return to the bot and use /premium_status to confirm it is active.",
                 status_kind="success",
                 action_url=_resolve_bot_deep_link() or _resolve_bot_link() or None,
                 action_label="Return to Bot" if (_resolve_bot_deep_link() or _resolve_bot_link()) else None,
