@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 from config import (
+    BOT_USERNAME,
     PUBLIC_BASE_URL,
     RAZORPAY_KEY_ID,
     RAZORPAY_KEY_SECRET,
@@ -167,8 +168,33 @@ class PaymentService:
             missing.append("RAZORPAY_WEBHOOK_SECRET")
         if not (os.getenv("PUBLIC_BASE_URL", "") or "").strip():
             missing.append("PUBLIC_BASE_URL")
+        if not (BOT_USERNAME or "").strip() or (BOT_USERNAME or "").strip() == "YOUR_BOT_USERNAME":
+            missing.append("BOT_USERNAME")
 
         return missing
+
+    def set_order_status_if_not_paid(self, order_id: str, status: str) -> tuple[dict | None, bool]:
+        with database.connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM payment_orders WHERE order_id = ?",
+                (order_id,),
+            ).fetchone()
+            if not row:
+                return None, False
+
+            order = dict(row)
+            if order.get("status") == "paid":
+                return order, False
+
+            conn.execute(
+                "UPDATE payment_orders SET status = ? WHERE order_id = ?",
+                (status, order_id),
+            )
+            updated_row = conn.execute(
+                "SELECT * FROM payment_orders WHERE order_id = ?",
+                (order_id,),
+            ).fetchone()
+        return dict(updated_row) if updated_row else order, True
 
     async def create_order(self, user_id: int, plan_type: str) -> dict:
         if plan_type not in SUBSCRIPTION_PLANS:

@@ -9,7 +9,7 @@ from threading import Thread
 import httpx
 from flask import Flask, jsonify, request
 
-from config import ADMINS, PAYMENT_DEBUG, PUBLIC_BASE_URL, RAZORPAY_KEY_ID, SUPREME_ADMIN_ID, TELEGRAM_TOKEN
+from config import ADMINS, BOT_USERNAME, PAYMENT_DEBUG, PUBLIC_BASE_URL, RAZORPAY_KEY_ID, SUPREME_ADMIN_ID, TELEGRAM_TOKEN
 from services.payment_service_db import SUBSCRIPTION_PLANS, payment_service
 from utils.logging_utils import get_logger
 
@@ -42,17 +42,30 @@ def _resolve_bot_token() -> str:
 
 
 def _resolve_bot_username() -> str:
-    return os.environ.get("BOT_USERNAME") or "YOUR_BOT_USERNAME"
+    candidate = (BOT_USERNAME or os.environ.get("BOT_USERNAME") or "").strip()
+    if not candidate or candidate == "YOUR_BOT_USERNAME":
+        logger.warning("BOT_USERNAME is missing or placeholder; Telegram redirect disabled")
+        return ""
+    return candidate
 
 
 def _resolve_bot_link() -> str:
-    return f"https://t.me/{_resolve_bot_username()}"
+    bot_username = _resolve_bot_username()
+    return f"https://t.me/{bot_username}" if bot_username else ""
+
+
+_LAST_TELEGRAM_WORKER_IDLE_LOG = 0.0
 
 
 def _telegram_worker():
+    global _LAST_TELEGRAM_WORKER_IDLE_LOG
     while True:
         try:
-            logger.info("Telegram worker waiting | queue_size=%s", _TELEGRAM_QUEUE.qsize())
+            queue_size = _TELEGRAM_QUEUE.qsize()
+            now_monotonic = time.monotonic()
+            if queue_size > 0 or now_monotonic - _LAST_TELEGRAM_WORKER_IDLE_LOG >= 300:
+                logger.debug("Telegram worker waiting | queue_size=%s", queue_size)
+                _LAST_TELEGRAM_WORKER_IDLE_LOG = now_monotonic
             item = _TELEGRAM_QUEUE.get(timeout=1)
         except Empty:
             continue
@@ -312,9 +325,17 @@ def payment_page(order_id: str):
 def payment_event():
     payload = request.get_json(silent=True) or {}
     step = payload.get("step") or "unknown"
+    order_id = payload.get("order_id")
+    final_order = payment_service.get_order(order_id) if order_id else None
+    if step == "checkout_closed":
+        logger.info(
+            "payment_closed_before_success | order_id=%s final_order_status=%s",
+            order_id,
+            final_order.get("status") if final_order else None,
+        )
     _trace_payment_step(
         step,
-        order_id=payload.get("order_id"),
+        order_id=order_id,
         payment_id=payload.get("payment_id"),
     )
     return jsonify({"status": "ok"})
@@ -323,11 +344,18 @@ def payment_event():
 @app.route("/payment/cancel", methods=["GET"])
 def payment_cancel(razorpay_order_id: str | None = None):
     razorpay_order_id = razorpay_order_id or request.args.get("razorpay_order_id")
+    final_order = None
+    updated = False
     if razorpay_order_id:
-        payment_service.update_order_status(razorpay_order_id, "cancelled")
-    final_order = payment_service.get_order(razorpay_order_id) if razorpay_order_id else None
+        final_order, updated = payment_service.set_order_status_if_not_paid(razorpay_order_id, "cancelled")
     logger.info(
-        "Checkout dismissed | order_id=%s final_order_status=%s",
+        "Checkout dismissed | order_id=%s final_order_status=%s updated=%s",
+        razorpay_order_id,
+        final_order.get("status") if final_order else None,
+        updated,
+    )
+    logger.info(
+        "payment_closed_before_success | order_id=%s final_order_status=%s",
         razorpay_order_id,
         final_order.get("status") if final_order else None,
     )
@@ -351,14 +379,16 @@ def payment_failed(
 ):
     razorpay_order_id = razorpay_order_id or request.args.get("razorpay_order_id")
     reason = reason or request.args.get("reason")
+    final_order = None
+    updated = False
     if razorpay_order_id:
-        payment_service.update_order_status(razorpay_order_id, "failed")
-    final_order = payment_service.get_order(razorpay_order_id) if razorpay_order_id else None
+        final_order, updated = payment_service.set_order_status_if_not_paid(razorpay_order_id, "failed")
     logger.warning(
-        "Payment failed | order_id=%s reason=%s final_order_status=%s",
+        "Payment failed | order_id=%s reason=%s final_order_status=%s updated=%s",
         razorpay_order_id,
         reason,
         final_order.get("status") if final_order else None,
+        updated,
     )
     _trace_payment_step(
         "payment_incomplete",
@@ -499,6 +529,8 @@ def payment_success():
         remote_order = payment_service.fetch_razorpay_order_sync(order_id)
         remote_payment_status = (remote_payment or {}).get("status")
         remote_order_status = (remote_order or {}).get("status")
+        backend_payment_captured = remote_payment_status == "captured"
+        backend_order_paid = remote_order_status == "paid"
         _trace_payment_step(
             "razorpay_backend_status",
             order_id=order_id,
@@ -506,7 +538,7 @@ def payment_success():
             payment_status=remote_payment_status or "missing",
             order_status=remote_order_status or "missing",
         )
-        if remote_payment_status != "captured":
+        if not backend_payment_captured:
             payment_service.update_order_status(order_id, "callback_incomplete")
             final_order = payment_service.get_order(order_id)
             logger.warning(
@@ -517,6 +549,13 @@ def payment_success():
                 remote_order_status,
                 bool(final_order and final_order.get("status") == "paid"),
                 final_order.get("status") if final_order else None,
+            )
+            logger.info(
+                "payment_not_captured_no_activation | order_id=%s payment_id=%s remote_payment_status=%s remote_order_status=%s",
+                order_id,
+                payment_id,
+                remote_payment_status,
+                remote_order_status,
             )
             _trace_payment_step(
                 "webhook_not_received",
@@ -533,9 +572,11 @@ def payment_success():
             )
 
         final_order = payment_service.get_order(order_id)
+        local_order_paid = bool(final_order and final_order.get("status") == "paid")
         if final_order and final_order.get("status") not in {"paid", "already_processed"}:
             payment_service.update_order_status(order_id, "callback_verified")
             final_order = payment_service.get_order(order_id)
+            local_order_paid = bool(final_order and final_order.get("status") == "paid")
         logger.info(
             "Payment callback signature verified | order_id=%s payment_id=%s remote_payment_status=%s remote_order_status=%s webhook_received=%s final_order_status=%s",
             order_id,
@@ -553,7 +594,45 @@ def payment_success():
             remote_order_status,
             final_order.get("status") if final_order else None,
         )
-        if final_order and final_order.get("status") in {"paid", "already_processed"}:
+        if not backend_order_paid:
+            logger.warning(
+                "premium_activation_blocked_reason | order_id=%s payment_id=%s reason=remote_order_not_paid remote_payment_status=%s remote_order_status=%s local_order_status=%s",
+                order_id,
+                payment_id,
+                remote_payment_status,
+                remote_order_status,
+                final_order.get("status") if final_order else None,
+            )
+            route_outcome = "remote_order_not_paid"
+            return _render_status_page(
+                title="Payment Verification Pending",
+                message="Your payment is still being confirmed.",
+                detail="Razorpay has not marked this order as paid yet, so premium was not activated.",
+                status_kind="pending",
+                action_url=_resolve_bot_link() or None,
+                action_label="Return to Bot" if _resolve_bot_link() else None,
+            )
+
+        if not local_order_paid:
+            logger.warning(
+                "premium_activation_blocked_reason | order_id=%s payment_id=%s reason=local_order_not_paid remote_payment_status=%s remote_order_status=%s local_order_status=%s",
+                order_id,
+                payment_id,
+                remote_payment_status,
+                remote_order_status,
+                final_order.get("status") if final_order else None,
+            )
+            route_outcome = "local_order_not_paid"
+            return _render_status_page(
+                title="Payment Verification Pending",
+                message="Your payment is still being confirmed.",
+                detail="The local order is not marked as paid yet, so premium was not activated.",
+                status_kind="pending",
+                action_url=_resolve_bot_link() or None,
+                action_label="Return to Bot" if _resolve_bot_link() else None,
+            )
+
+        if final_order and final_order.get("status") == "paid":
             try:
                 logger.info(
                     "premium activation start | source=payment_success order_id=%s payment_id=%s final_order_status=%s",
@@ -582,11 +661,17 @@ def payment_success():
                     message="Your payment was received.",
                     detail="We are finalizing premium activation safely. Please return to the bot and use /premium_status in a moment.",
                     status_kind="pending",
-                    action_url=_resolve_bot_link(),
-                    action_label="Return to Bot",
+                    action_url=_resolve_bot_link() or None,
+                    action_label="Return to Bot" if _resolve_bot_link() else None,
                 )
 
             if not activation_result.get("ok"):
+                logger.warning(
+                    "premium_activation_blocked_reason | order_id=%s payment_id=%s reason=%s",
+                    order_id,
+                    payment_id,
+                    activation_result.get("reason"),
+                )
                 logger.warning(
                     "Payment success could not confirm premium activation | order_id=%s final_order_status=%s reason=%s",
                     order_id,
@@ -599,8 +684,8 @@ def payment_success():
                     message="Your payment was received.",
                     detail="We are finalizing premium activation. Please return to the bot and use /premium_status in a moment.",
                     status_kind="pending",
-                    action_url=_resolve_bot_link(),
-                    action_label="Return to Bot",
+                    action_url=_resolve_bot_link() or None,
+                    action_label="Return to Bot" if _resolve_bot_link() else None,
                 )
             logger.info(
                 "redirecting_to_bot | order_id=%s final_order_status=%s activation_result=%s",
@@ -614,10 +699,10 @@ def payment_success():
                 message="Your premium payment was verified successfully.",
                 detail="Premium has been activated on your account. You can return to the bot and use /premium_status to confirm it is active.",
                 status_kind="success",
-                action_url=_resolve_bot_link(),
-                action_label="Return to Bot",
-                auto_redirect_url=_resolve_bot_link(),
-                auto_redirect_delay_ms=3000,
+                action_url=_resolve_bot_link() or None,
+                action_label="Return to Bot" if _resolve_bot_link() else None,
+                auto_redirect_url=_resolve_bot_link() or None,
+                auto_redirect_delay_ms=3000 if _resolve_bot_link() else None,
             )
 
         if not (final_order and final_order.get("status") == "paid"):
@@ -647,8 +732,8 @@ def payment_success():
             message="Your payment is being verified.",
             detail="We hit a temporary issue while finalizing this payment. Please return to the bot and use /premium_status shortly.",
             status_kind="pending",
-            action_url=_resolve_bot_link(),
-            action_label="Return to Bot",
+            action_url=_resolve_bot_link() or None,
+            action_label="Return to Bot" if _resolve_bot_link() else None,
         )
     finally:
         logger.info(
