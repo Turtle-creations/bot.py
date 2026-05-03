@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+    <div class="container hero-grid">
+        <div>
+            <span class="eyebrow">QuizPathshala</span>
+            <h1>QuizPathshala</h1>
+            <p class="hero-copy">Online quiz preparation platform via Telegram bot</p>
+            <p class="hero-subcopy">Practice quizzes, track progress, explore premium plans, and stay connected through the QuizPathshala Telegram experience.</p>
+            <div class="hero-actions">
+                <a class="button button-primary" href="{{ bot_url }}" target="_blank" rel="noopener">Open Bot</a>
+                <a class="button button-secondary" href="/contact">Contact Support</a>
+            </div>
+        </div>
+        <div class="hero-card">
+            <h2>Features</h2>
+            <ul class="feature-list">
+                <li>Practice quizzes</li>
+                <li>Score tracking</li>
+                <li>Premium plans</li>
+            </ul>
+        </div>
+    </div>
+</section>
+{% endblock %}

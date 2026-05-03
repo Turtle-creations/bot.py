@@ -7,7 +7,7 @@ from queue import Empty, Full, Queue
 from threading import Thread
 
 import httpx
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, render_template, request
 
 from config import ADMINS, BOT_USERNAME, PAYMENT_DEBUG, PUBLIC_BASE_URL, RAZORPAY_KEY_ID, SUPREME_ADMIN_ID, TELEGRAM_TOKEN
 from services.payment_service_db import SUBSCRIPTION_PLANS, payment_service
@@ -16,7 +16,11 @@ from utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    template_folder="quizpathshala_website/website/templates",
+    static_folder="quizpathshala_website/website/static",
+)
 _TELEGRAM_QUEUE_MAX_SIZE = 1000
 _TELEGRAM_QUEUE: Queue[dict] = Queue(maxsize=_TELEGRAM_QUEUE_MAX_SIZE)
 _ADMIN_DEBUG_STEPS = {
@@ -216,8 +220,28 @@ def _render_status_page(
 
 
 @app.route("/", methods=["GET"])
-def index():
-    return "Bot is running!"
+def home():
+    return render_template("home.html")
+
+
+@app.route("/privacy", methods=["GET"])
+def privacy():
+    return render_template("simple_page.html", title="Privacy Policy")
+
+
+@app.route("/terms", methods=["GET"])
+def terms():
+    return render_template("simple_page.html", title="Terms & Conditions")
+
+
+@app.route("/refund-policy", methods=["GET"])
+def refund():
+    return render_template("simple_page.html", title="Refund Policy")
+
+
+@app.route("/contact", methods=["GET"])
+def contact():
+    return render_template("contact.html")
 
 
 @app.route("/health", methods=["GET"])

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ page_title }} | {{ site_name }}</title>
+    {% if canonical_url %}
+    <link rel="canonical" href="{{ canonical_url }}{{ request.path }}">
+    {% endif %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/site.css') }}">
+</head>
+<body>
+    <header class="site-header">
+        <div class="container nav-shell">
+            <a class="brand" href="/">QuizPathshala</a>
+            <nav class="site-nav">
+                <a href="/">Home</a>
+                <a href="/contact">Contact</a>
+                <a href="/privacy">Privacy</a>
+                <a href="/terms">Terms</a>
+                <a href="/refund-policy">Refund Policy</a>
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="site-footer">
+        <div class="container footer-grid">
+            <div>
+                <h3>{{ site_name }}</h3>
+                <p>{{ tagline }}</p>
+            </div>
+            <div>
+                <h3>Support</h3>
+                <p><a href="{{ support_telegram }}" target="_blank" rel="noopener">Telegram Support</a></p>
+                <p><a href="mailto:{{ support_email }}">{{ support_email }}</a></p>
+            </div>
+            <div>
+                <h3>Quick Links</h3>
+                <p><a href="{{ bot_url }}" target="_blank" rel="noopener">Open Bot</a></p>
+                <p>{{ support_hours }}</p>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

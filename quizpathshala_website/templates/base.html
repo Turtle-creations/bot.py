@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ page_title }} | QuizPathshala</title>
+    <meta name="description" content="QuizPathshala is an online quiz preparation platform with premium subscriptions, quiz attempts, and admin controls.">
+    {% if canonical_url %}
+    <link rel="canonical" href="{{ canonical_url }}{{ request.path }}">
+    {% endif %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/site.css') }}">
+</head>
+<body>
+    <header class="site-header">
+        <div class="container nav-shell">
+            <a class="brand" href="{{ url_for('pages.home') }}">QuizPathshala</a>
+            <nav class="site-nav">
+                <a href="{{ url_for('pages.home') }}">Home</a>
+                <a href="{{ url_for('quiz.quiz_start') }}">Quiz</a>
+                <a href="{{ url_for('premium.premium_page') }}">Premium</a>
+                <a href="{{ url_for('pages.contact') }}">Contact</a>
+                <a href="{{ url_for('pages.privacy') }}">Privacy</a>
+                <a href="{{ url_for('pages.terms') }}">Terms</a>
+                <a href="{{ url_for('pages.refund_policy') }}">Refund Policy</a>
+                {% if admin_authenticated %}
+                <a href="{{ url_for('admin.admin_dashboard') }}">Admin</a>
+                {% endif %}
+            </nav>
+        </div>
+    </header>
+
+    <main class="page-shell">
+        <div class="container flash-stack">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                    <div class="flash flash-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+        </div>
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="site-footer">
+        <div class="container footer-grid">
+            <div>
+                <h3>QuizPathshala</h3>
+                <p>Online quiz preparation platform via Telegram bot.</p>
+            </div>
+            <div>
+                <h3>Support</h3>
+                <p><a href="{{ support_telegram|default('https://t.me/QuizPathshala_bot') }}" target="_blank" rel="noopener">Telegram Support</a></p>
+                <p><a href="mailto:{{ support_email|default('quizpathshala.help@gmail.com') }}">{{ support_email|default('quizpathshala.help@gmail.com') }}</a></p>
+            </div>
+            <div>
+                <h3>Quick Access</h3>
+                <p><a href="{{ url_for('quiz.quiz_start') }}">Start Quiz</a></p>
+                <p><a href="{{ url_for('premium.premium_page') }}">Buy Premium</a></p>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

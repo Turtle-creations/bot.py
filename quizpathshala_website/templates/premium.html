@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-hero">
+    <div class="container narrow">
+        <span class="eyebrow">Premium</span>
+        <h1>Premium access for longer and deeper preparation</h1>
+        <p>{{ premium_status }}</p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        {% if payment_ready %}
+        <div class="card-grid">
+            {% for item in premium_prices %}
+            <article class="plan-card plan-card-large">
+                <p class="plan-tag">{{ item.name }}</p>
+                <h2>{{ item.key }}</h2>
+                <p class="plan-price">INR {{ '%.2f'|format(item.amount_rupees) }}</p>
+                <p>Premium unlocks full quiz access and extended features.</p>
+                <form method="post">
+                    <input type="hidden" name="plan_type" value="{{ item.plan_type }}">
+                    <button class="button button-primary" type="submit">Buy {{ item.name }}</button>
+                </form>
+            </article>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-page narrow">
+            <h2>Payments not configured yet</h2>
+            <p>Razorpay checkout is currently unavailable because some required environment variables are missing.</p>
+            <p>{{ missing_payment_config|join(', ') }}</p>
+        </div>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}

@@ -1,0 +1,38 @@
+<<<<<<< HEAD
+[
+    {
+        "id": 1341448466,
+        "name": "Typing.....",
+        "quiz_played": 0,
+        "score": 0,
+        "correct": 0,
+        "wrong": 0
+    },
+    {
+        "id": 820743761,
+        "name": "Hemant",
+        "quiz_played": 0,
+        "score": 0,
+        "correct": 0,
+        "wrong": 0
+    }
+=======
+[
+    {
+        "id": 1341448466,
+        "name": "Typing.....",
+        "quiz_played": 0,
+        "score": 0,
+        "correct": 0,
+        "wrong": 0
+    },
+    {
+        "id": 820743761,
+        "name": "Hemant",
+        "quiz_played": 0,
+        "score": 0,
+        "correct": 0,
+        "wrong": 0
+    }
+>>>>>>> 72286ff2e6294b7e17af827ebd9e336761c26627
+]

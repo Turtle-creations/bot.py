@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-hero">
+    <div class="container">
+        <span class="eyebrow">Admin Panel</span>
+        <h1>QuizPathshala management</h1>
+        <form method="post" action="{{ url_for('admin.admin_logout') }}">
+            <button class="button button-secondary" type="submit">Log Out</button>
+        </form>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container admin-grid">
+        <div class="form-card">
+            <h2>Update premium prices</h2>
+            <form method="post">
+                <label for="plan_type">Plan</label>
+                <select id="plan_type" name="plan_type">
+                    <option value="week_1">week_1</option>
+                    <option value="month_1">month_1</option>
+                    <option value="month_3">month_3</option>
+                </select>
+                <label for="amount">Amount in INR</label>
+                <input id="amount" name="amount" type="text" placeholder="299">
+                <button class="button button-primary" type="submit">Update Price</button>
+            </form>
+            <div class="mini-table">
+                {% for item in premium_prices %}
+                <p>{{ item.key }}: INR {{ '%.2f'|format(item.amount_rupees) }}</p>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="data-card">
+            <h2>Users</h2>
+            <table>
+                <thead>
+                    <tr><th>Name</th><th>Premium</th><th>Score</th><th>Played</th></tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td>{{ user.full_name }}</td>
+                        <td>{{ 'Yes' if user.is_premium else 'No' }}</td>
+                        <td>{{ user.score }}</td>
+                        <td>{{ user.quiz_played }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="data-card">
+            <h2>Payments</h2>
+            <table>
+                <thead>
+                    <tr><th>Payment ID</th><th>Plan</th><th>Status</th><th>Amount</th></tr>
+                </thead>
+                <tbody>
+                    {% for payment in payments %}
+                    <tr>
+                        <td>{{ payment.payment_id }}</td>
+                        <td>{{ payment.plan_type }}</td>
+                        <td>{{ payment.status }}</td>
+                        <td>{{ payment.amount }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4">No verified payments yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="data-card">
+            <h2>Orders</h2>
+            <table>
+                <thead>
+                    <tr><th>Order ID</th><th>User</th><th>Plan</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                    {% for order in orders %}
+                    <tr>
+                        <td>{{ order.order_id }}</td>
+                        <td>{{ order.user_id }}</td>
+                        <td>{{ order.plan_type }}</td>
+                        <td>{{ order.status }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4">No orders yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="data-card">
+            <h2>Support Tickets</h2>
+            <table>
+                <thead>
+                    <tr><th>ID</th><th>User</th><th>Status</th><th>Message</th></tr>
+                </thead>
+                <tbody>
+                    {% for ticket in support_tickets %}
+                    <tr>
+                        <td>{{ ticket.support_id }}</td>
+                        <td>{{ ticket.full_name }}</td>
+                        <td>{{ ticket.status }}</td>
+                        <td>{{ ticket.message }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4">No support tickets yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endblock %}

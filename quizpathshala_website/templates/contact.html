@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-hero">
+    <div class="container narrow">
+        <span class="eyebrow">Contact</span>
+        <h1>{{ page.title }}</h1>
+        <p>{{ page.intro }}</p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container form-grid">
+        <div class="text-page">
+            {% for section in page.sections %}
+            <p>{{ section }}</p>
+            {% endfor %}
+        </div>
+        <form method="post" class="form-card">
+            <h2>Create support ticket</h2>
+            <label for="full_name">Your name</label>
+            <input id="full_name" name="full_name" type="text" value="{{ user.full_name }}">
+            <label for="message">Message</label>
+            <textarea id="message" name="message" rows="6" placeholder="Describe your issue or question"></textarea>
+            <button class="button button-primary" type="submit">Submit Ticket</button>
+        </form>
+    </div>
+</section>
+{% endblock %}
