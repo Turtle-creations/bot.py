@@ -9,20 +9,18 @@
             <p class="hero-copy">A full quiz practice website rebuilt from the original Telegram bot workflow.</p>
             <p class="hero-subcopy">Practice one question at a time, see score and accuracy instantly, unlock premium-only sets through Razorpay, and keep the Telegram bot as a companion channel.</p>
             <div class="hero-actions">
-                <a class="button button-primary" href="{{ url_for('quiz.quiz_start') }}">Start Quiz</a>
-                <a class="button button-secondary" href="{{ url_for('premium.premium_page') }}">Buy Premium</a>
-                <a class="button button-secondary" href="{{ bot_url }}" target="_blank" rel="noopener">Open Telegram Bot</a>
+                <a class="button button-primary" href="https://t.me/QuizPathshala_bot" target="_blank" rel="noopener">Start Quiz</a>
+                <a class="button button-secondary" href="https://t.me/QuizPathshala_bot" target="_blank" rel="noopener">Buy Premium</a>
+                <a class="button button-secondary" href="https://t.me/QuizPathshala_bot" target="_blank" rel="noopener">Open Telegram Bot</a>
             </div>
         </div>
         <div class="hero-card">
-            <h2>Your current session</h2>
+            <h2>Continue on Telegram</h2>
             <p><strong>User ID:</strong> {{ user.user_id }}</p>
-            <p><strong>Name:</strong> {{ user.full_name }}</p>
-            <form method="post" class="inline-form">
-                <label for="full_name">Display name</label>
-                <input id="full_name" name="full_name" type="text" value="{{ user.full_name }}" placeholder="Enter your name">
-                <button class="button button-primary" type="submit">Update Name</button>
-            </form>
+            <p>Quiz sessions, support, and premium guidance are temporarily being handled through the official Telegram bot.</p>
+            <div class="hero-actions">
+                <a class="button button-primary" href="https://t.me/QuizPathshala_bot" target="_blank" rel="noopener">Open Telegram Bot</a>
+            </div>
         </div>
     </div>
 </section>

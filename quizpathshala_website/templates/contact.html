@@ -15,15 +15,17 @@
             {% for section in page.sections %}
             <p>{{ section }}</p>
             {% endfor %}
+            <div class="hero-actions">
+                <a class="button button-primary" href="https://t.me/QuizPathshala_bot" target="_blank" rel="noopener">Contact Support</a>
+            </div>
         </div>
-        <form method="post" class="form-card">
-            <h2>Create support ticket</h2>
-            <label for="full_name">Your name</label>
-            <input id="full_name" name="full_name" type="text" value="{{ user.full_name }}">
-            <label for="message">Message</label>
-            <textarea id="message" name="message" rows="6" placeholder="Describe your issue or question"></textarea>
-            <button class="button button-primary" type="submit">Submit Ticket</button>
-        </form>
+        <div class="form-card">
+            <h2>Support on Telegram</h2>
+            <p>For quiz access, premium help, or any questions, message the official QuizPathshala bot directly.</p>
+            <div class="hero-actions">
+                <a class="button button-primary" href="https://t.me/QuizPathshala_bot" target="_blank" rel="noopener">Help on Telegram</a>
+            </div>
+        </div>
     </div>
 </section>
 {% endblock %}

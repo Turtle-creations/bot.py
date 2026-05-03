@@ -15,6 +15,12 @@ from utils.logging_utils import get_logger
 
 
 logger = get_logger(__name__)
+SITE_NAME = "QuizPathshala"
+SITE_TAGLINE = "Online quiz preparation platform via Telegram bot"
+SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "quizpathshala.help@gmail.com")
+SUPPORT_HOURS = os.environ.get("SUPPORT_HOURS", "Monday to Saturday, 10:00 AM to 7:00 PM IST")
+SUPPORT_TELEGRAM = os.environ.get("SUPPORT_TELEGRAM", "")
+CANONICAL_URL = (os.environ.get("CANONICAL_URL") or PUBLIC_BASE_URL or "").rstrip("/")
 
 app = Flask(
     __name__,
@@ -33,6 +39,27 @@ _ADMIN_DEBUG_STEPS = {
     "already_processed",
     "premium_not_activated",
 }
+
+
+@app.context_processor
+def inject_site_context():
+    return {
+        "site_name": SITE_NAME,
+        "tagline": SITE_TAGLINE,
+        "bot_url": _resolve_bot_link(),
+        "support_email": SUPPORT_EMAIL,
+        "support_hours": SUPPORT_HOURS,
+        "support_telegram": SUPPORT_TELEGRAM or _resolve_bot_link(),
+        "canonical_url": CANONICAL_URL,
+    }
+
+
+def _build_simple_page(title: str, intro: str, *sections: str) -> dict[str, object]:
+    return {
+        "title": title,
+        "intro": intro,
+        "sections": list(sections),
+    }
 
 
 def _admin_chat_ids() -> list[int]:
@@ -221,27 +248,62 @@ def _render_status_page(
 
 @app.route("/", methods=["GET"])
 def home():
-    return render_template("home.html")
+    return render_template("home.html", page_title="Home")
+
+
+@app.route("/quiz", methods=["GET"])
+def quiz_page():
+    page = _build_simple_page(
+        "Quiz Practice",
+        "Practice quizzes are available through the QuizPathshala Telegram bot.",
+        "Open the bot to choose your exam, start a quiz, and track your performance.",
+    )
+    return render_template("simple_page.html", page_title=page["title"], page=page)
+
+
+@app.route("/premium", methods=["GET"])
+def premium_page():
+    page = _build_simple_page(
+        "Premium Plans",
+        "Premium access is managed through the QuizPathshala Telegram bot and payment flow.",
+        "Use the bot to explore plans, continue to checkout, and activate premium after Razorpay confirmation.",
+    )
+    return render_template("simple_page.html", page_title=page["title"], page=page)
 
 
 @app.route("/privacy", methods=["GET"])
 def privacy():
-    return render_template("simple_page.html", title="Privacy Policy")
+    page = _build_simple_page(
+        "Privacy Policy",
+        "QuizPathshala uses the information needed to operate quiz access, progress tracking, and support.",
+        "Payment verification and premium activation are completed through the secure Razorpay payment workflow.",
+    )
+    return render_template("simple_page.html", page_title=page["title"], page=page)
 
 
 @app.route("/terms", methods=["GET"])
 def terms():
-    return render_template("simple_page.html", title="Terms & Conditions")
+    page = _build_simple_page(
+        "Terms & Conditions",
+        "Using QuizPathshala means following the app rules, payment terms, and platform policies.",
+        "Premium benefits are activated only after successful payment verification and webhook confirmation.",
+    )
+    return render_template("simple_page.html", page_title=page["title"], page=page)
 
 
 @app.route("/refund-policy", methods=["GET"])
 def refund():
-    return render_template("simple_page.html", title="Refund Policy")
+    page = _build_simple_page(
+        "Refund Policy",
+        "Refund handling depends on the payment status and the support review process.",
+        "Contact support with your payment details if you need help with a premium purchase.",
+    )
+    return render_template("simple_page.html", page_title=page["title"], page=page)
 
 
 @app.route("/contact", methods=["GET"])
 def contact():
-    return render_template("contact.html")
+    return render_template("contact.html", page_title="Contact")
 
 
 @app.route("/health", methods=["GET"])
@@ -822,7 +884,7 @@ def razorpay_webhook():
         )
         route_outcome = "missing_signature"
         _log_webhook_end()
-        return jsonify({"detail": "Missing Razorpay signature"}), 400
+        return jsonify({"detail": "Missing Razorpay signature"}), 401
 
     signature_ok = payment_service.verify_webhook_signature(raw_body, x_razorpay_signature)
     if not signature_ok:

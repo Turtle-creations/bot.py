@@ -19,10 +19,7 @@
                 <h2>{{ item.name }}</h2>
                 <p class="plan-price">INR {{ "%.2f"|format(item.amount_rupees) }}</p>
                 <p>Premium unlocks full quiz access, longer preparation windows, and extended features.</p>
-                <form method="post">
-                    <input type="hidden" name="plan_type" value="{{ item.key }}">
-                    <button class="button button-primary" type="submit">Buy {{ item.name }}</button>
-                </form>
+                <a class="button button-primary" href="https://t.me/QuizPathshala_bot" target="_blank" rel="noopener">Buy {{ item.name }}</a>
             </article>
             {% endfor %}
         </div>
@@ -31,6 +28,9 @@
             <h2>Payments not configured yet</h2>
             <p>Razorpay checkout is currently unavailable because some required environment variables are missing.</p>
             <p>{{ missing_payment_config|join(", ") }}</p>
+            <div class="hero-actions">
+                <a class="button button-primary" href="https://t.me/QuizPathshala_bot" target="_blank" rel="noopener">Open Telegram Bot</a>
+            </div>
         </div>
         {% endif %}
     </div>

@@ -17,25 +17,22 @@
                 <h2>{{ exam.title }}</h2>
                 <p>{{ exam.description or "Exam practice category" }}</p>
                 {% for set_item in exam.sets %}
-                <form method="post" class="quiz-set-form">
-                    <input type="hidden" name="set_id" value="{{ set_item.set_id }}">
+                <div class="quiz-set-form">
                     <div class="quiz-set-row">
                         <div>
                             <h3>{{ set_item.title }}</h3>
                             <p>{{ set_item.question_count }} questions{% if set_item.locked %} | Premium{% endif %}</p>
                         </div>
                         <div class="quiz-set-actions">
-                            <select name="question_count">
+                            <select name="question_count" disabled>
                                 {% for count in question_counts %}
                                 <option value="{{ count }}">{{ count }} Questions</option>
                                 {% endfor %}
                             </select>
-                            <button class="button button-primary" type="submit" {% if not set_item.has_access %}disabled{% endif %}>
-                                {% if set_item.has_access %}Start{% else %}Premium Only{% endif %}
-                            </button>
+                            <a class="button button-primary" href="https://t.me/QuizPathshala_bot" target="_blank" rel="noopener">Start Quiz</a>
                         </div>
                     </div>
-                </form>
+                </div>
                 {% endfor %}
             </article>
             {% endfor %}
