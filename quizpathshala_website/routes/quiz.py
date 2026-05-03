@@ -58,7 +58,11 @@ def play():
             if selected_raw is None:
                 flash("Select an option or use Skip.", "error")
                 return redirect(url_for("quiz.play"))
-            selected_index = int(selected_raw)
+            try:
+                selected_index = int(selected_raw)
+            except ValueError:
+                flash("Please select a valid option.", "error")
+                return redirect(url_for("quiz.play"))
             result = web_quiz_service.answer_question(user["user_id"], selected_index, action="answer")
             session["active_result"] = result
         elif action == "skip":
@@ -95,6 +99,7 @@ def play():
         quiz_session=quiz_session,
         question=question,
         active_result=active_result,
+        media_route_name="media_file",
         admin_authenticated=web_identity_service.is_admin_authenticated(),
     )
 

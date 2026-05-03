@@ -2,7 +2,7 @@ from functools import wraps
 
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 
-from config import ADMIN_PASSWORD
+from config import ADMIN_PASSWORD, SUPPORT_EMAIL, SUPPORT_TELEGRAM
 from services.payment_service_db import payment_service
 from services.web_admin_service import web_admin_service
 from services.web_identity_service import web_identity_service
@@ -32,7 +32,13 @@ def admin_login():
             flash("Admin access granted.", "success")
             return redirect(url_for("admin.admin_dashboard"))
         flash("Invalid admin password.", "error")
-    return render_template("admin_login.html", page_title="Admin Login")
+    return render_template(
+        "admin_login.html",
+        page_title="Admin Login",
+        support_email=SUPPORT_EMAIL,
+        support_telegram=SUPPORT_TELEGRAM,
+        admin_authenticated=web_identity_service.is_admin_authenticated(),
+    )
 
 
 @admin_blueprint.route("/admin/logout", methods=["POST"])
@@ -56,4 +62,11 @@ def admin_dashboard():
         return redirect(url_for("admin.admin_dashboard"))
 
     dashboard = web_admin_service.dashboard_data()
-    return render_template("admin_dashboard.html", page_title="Admin Panel", **dashboard)
+    return render_template(
+        "admin_dashboard.html",
+        page_title="Admin Panel",
+        support_email=SUPPORT_EMAIL,
+        support_telegram=SUPPORT_TELEGRAM,
+        admin_authenticated=True,
+        **dashboard,
+    )

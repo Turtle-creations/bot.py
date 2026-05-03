@@ -6,8 +6,8 @@
         <div>
             <span class="eyebrow">QuizPathshala</span>
             <h1>QuizPathshala</h1>
-            <p class="hero-copy">Online quiz preparation platform via Telegram bot</p>
-            <p class="hero-subcopy">Play quizzes on the web, track your score, unlock premium-only sets, and keep the Telegram bot as your always-available companion.</p>
+            <p class="hero-copy">A full quiz practice website rebuilt from the original Telegram bot workflow.</p>
+            <p class="hero-subcopy">Practice one question at a time, see score and accuracy instantly, unlock premium-only sets through Razorpay, and keep the Telegram bot as a companion channel.</p>
             <div class="hero-actions">
                 <a class="button button-primary" href="{{ url_for('quiz.quiz_start') }}">Start Quiz</a>
                 <a class="button button-secondary" href="{{ url_for('premium.premium_page') }}">Buy Premium</a>
@@ -31,7 +31,7 @@
     <div class="container">
         <div class="section-heading">
             <span class="eyebrow">Features</span>
-            <h2>Core platform features rebuilt for web</h2>
+            <h2>Core bot logic, reimplemented for web</h2>
         </div>
         <div class="card-grid">
             {% for feature in features %}
@@ -48,7 +48,7 @@
     <div class="container">
         <div class="section-heading">
             <span class="eyebrow">Quiz Catalog</span>
-            <h2>Available quizzes and premium-locked sets</h2>
+            <h2>Available sets and premium access</h2>
         </div>
         <div class="catalog-grid">
             {% for exam in catalog %}
@@ -57,7 +57,7 @@
                 <p>{{ exam.description or "Exam category with practice sets." }}</p>
                 <ul class="mini-list">
                     {% for set_item in exam.sets %}
-                    <li>{{ set_item.title }}{% if set_item.locked %} • Premium{% endif %} • {{ set_item.question_count }} questions</li>
+                    <li>{{ set_item.title }}{% if set_item.locked %} | Premium{% endif %} | {{ set_item.question_count }} questions</li>
                     {% endfor %}
                 </ul>
             </article>

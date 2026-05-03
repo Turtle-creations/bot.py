@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ page_title }} | QuizPathshala</title>
-    <meta name="description" content="QuizPathshala is an online quiz preparation platform with premium subscriptions, quiz attempts, and admin controls.">
+    <meta name="description" content="QuizPathshala is a web-based quiz practice platform with premium access, Razorpay payments, and admin controls.">
     {% if canonical_url %}
     <link rel="canonical" href="{{ canonical_url }}{{ request.path }}">
     {% endif %}
@@ -22,9 +22,7 @@
                 <a href="{{ url_for('pages.privacy') }}">Privacy</a>
                 <a href="{{ url_for('pages.terms') }}">Terms</a>
                 <a href="{{ url_for('pages.refund_policy') }}">Refund Policy</a>
-                {% if admin_authenticated %}
-                <a href="{{ url_for('admin.admin_dashboard') }}">Admin</a>
-                {% endif %}
+                <a href="{{ url_for('admin.admin_dashboard' if admin_authenticated else 'admin.admin_login') }}">Admin</a>
             </nav>
         </div>
     </header>
@@ -46,7 +44,7 @@
         <div class="container footer-grid">
             <div>
                 <h3>QuizPathshala</h3>
-                <p>Online quiz preparation platform via Telegram bot.</p>
+                <p>Practice quizzes on the web, unlock premium-only sets, and keep the Telegram bot as a companion channel.</p>
             </div>
             <div>
                 <h3>Support</h3>

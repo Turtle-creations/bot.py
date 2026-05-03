@@ -43,6 +43,8 @@ class WebQuizService:
     def start_quiz(self, user_id: int, set_id: int, requested_count: int) -> tuple[dict | None, str | None]:
         if not self.can_access_set(user_id, set_id):
             return None, "This quiz set is premium-only."
+        if int(requested_count) not in self.QUIZ_COUNT_OPTIONS:
+            return None, "Please choose 20, 50, or 100 questions."
 
         question_pool = [self._prepare_question(item) for item in exam_service.get_questions(set_id)]
         if not question_pool:

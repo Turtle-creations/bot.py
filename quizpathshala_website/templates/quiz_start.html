@@ -5,7 +5,7 @@
     <div class="container narrow">
         <span class="eyebrow">Quiz</span>
         <h1>Start a quiz session</h1>
-        <p>Select a set, choose 20, 50, or 100 questions, and begin your quiz journey.</p>
+        <p>Select a set, choose 20, 50, or 100 questions, and begin one question at a time.</p>
     </div>
 </section>
 
@@ -22,7 +22,7 @@
                     <div class="quiz-set-row">
                         <div>
                             <h3>{{ set_item.title }}</h3>
-                            <p>{{ set_item.question_count }} questions{% if set_item.locked %} • Premium{% endif %}</p>
+                            <p>{{ set_item.question_count }} questions{% if set_item.locked %} | Premium{% endif %}</p>
                         </div>
                         <div class="quiz-set-actions">
                             <select name="question_count">

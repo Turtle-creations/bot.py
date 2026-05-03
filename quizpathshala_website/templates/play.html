@@ -5,7 +5,7 @@
     <div class="container narrow">
         <div class="quiz-topline">
             <div>
-                <span class="eyebrow">Playing {{ current_set.title if current_set else 'Quiz' }}</span>
+                <span class="eyebrow">Playing {{ current_set.title if current_set else "Quiz" }}</span>
                 <h1>Question {{ question.number }} of {{ question.total }}</h1>
             </div>
             <div class="timer-card">
@@ -16,6 +16,10 @@
 
         <article class="question-card">
             <p class="question-text">{{ question.question_text }}</p>
+            {% if question.image_path %}
+            <img class="question-image" src="{{ url_for(media_route_name, relative_path=question.image_path) }}" alt="Question illustration">
+            {% endif %}
+
             {% if not active_result %}
             <form method="post" id="quiz-form">
                 <input type="hidden" name="action" value="answer" id="quiz-action">
@@ -35,9 +39,9 @@
             </form>
             {% else %}
             <div class="result-badge {% if active_result.correct %}result-good{% else %}result-bad{% endif %}">
-                {% if active_result.action == 'skip' %}
+                {% if active_result.action == "skip" %}
                 Question skipped
-                {% elif active_result.action == 'timeout' %}
+                {% elif active_result.action == "timeout" %}
                 Time is up for this question
                 {% elif active_result.correct %}
                 Correct answer

@@ -24,6 +24,7 @@ body {
 }
 
 a { color: inherit; }
+img { max-width: 100%; display: block; }
 
 .container {
     width: min(1120px, calc(100% - 2rem));
@@ -141,6 +142,7 @@ h1 {
 
 .button-primary { background: var(--accent); color: #fff8f1; }
 .button-secondary { background: rgba(255, 255, 255, 0.75); border: 1px solid var(--line); }
+.button:disabled { cursor: not-allowed; opacity: 0.55; }
 
 .hero-card,
 .info-card,
@@ -225,6 +227,13 @@ textarea {
     color: var(--text);
 }
 
+.question-image {
+    width: 100%;
+    margin: 1rem 0 1.4rem;
+    border-radius: 22px;
+    border: 1px solid var(--line);
+}
+
 .option-list {
     display: grid;
     gap: 0.8rem;
@@ -266,6 +275,10 @@ th, td {
 }
 
 .site-footer { padding: 2rem 0 3rem; }
+
+.result-details {
+    margin-top: 1.25rem;
+}
 
 @media (max-width: 900px) {
     .hero-grid,

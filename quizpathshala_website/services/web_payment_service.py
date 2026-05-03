@@ -10,22 +10,30 @@ from services.user_service_db import now_iso
 
 
 class WebPaymentService:
+    PLAN_ALIASES = {
+        "week_1": "week_1",
+        "month_1": "month_1",
+        "month_3": "months_3",
+        "months_3": "months_3",
+    }
+
     def create_order(self, user_id: int, plan_type: str) -> dict:
-        if plan_type not in {"week_1", "month_1", "months_3"}:
+        normalized_plan_type = self.PLAN_ALIASES.get((plan_type or "").strip().lower())
+        if normalized_plan_type not in {"week_1", "month_1", "months_3"}:
             raise ValueError("Invalid premium plan selected.")
 
         missing = payment_service.get_missing_configuration()
         if missing:
             raise ValueError(f"Missing required payment env vars: {', '.join(missing)}")
 
-        plan = payment_service.get_plan(plan_type)
+        plan = payment_service.get_plan(normalized_plan_type)
         payload = {
             "amount": plan["amount"],
             "currency": "INR",
             "receipt": f"quizpathshala_{user_id}_{int(time.time())}",
             "notes": {
                 "user_id": str(user_id),
-                "plan_type": plan_type,
+                "plan_type": normalized_plan_type,
             },
         }
 
@@ -45,7 +53,7 @@ class WebPaymentService:
                 (
                     order["id"],
                     user_id,
-                    plan_type,
+                    normalized_plan_type,
                     plan["amount"],
                     order.get("currency", "INR"),
                     order.get("status", "created"),
