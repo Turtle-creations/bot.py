@@ -560,6 +560,15 @@ async def _show_notification_delete_confirmation(message, notification_id: int):
     )
 
 
+def _build_premium_prices_text() -> str:
+    lines = ["<b>💰 Current Premium Prices</b>", ""]
+    for item in payment_service.list_premium_prices():
+        lines.append(
+            f"<b>{item['key']}</b> ({html.escape(item['name'])}) - ₹{item['amount_rupees']:.2f}"
+        )
+    return "\n".join(lines)
+
+
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = user_service.ensure_user(update.effective_user)
     if not user_service.is_admin(user["user_id"]):
@@ -1421,6 +1430,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         "broadcast": "📢 Send the broadcast message",
         "upgrade_premium": "💎 Send: user_id | days",
         "downgrade_premium": "↩️ Send user_id",
+        "change_premium_price": "💰 Send: plan_key | amount\nValid plan keys: week_1, month_1, month_3",
     }
 
     if action in prompts:
@@ -1469,6 +1479,15 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode=ParseMode.HTML,
             reply_markup=back_to_main_keyboard(),
         )
+        return
+
+    if action == "view_premium_prices":
+        await query.message.reply_text(
+            _build_premium_prices_text(),
+            parse_mode=ParseMode.HTML,
+            reply_markup=back_to_main_keyboard(),
+        )
+        return
 
 
 async def admin_text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1912,6 +1931,30 @@ async def admin_text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"✅ Premium removed for {result['full_name']}."
             )
 
+        elif mode == "change_premium_price":
+            if "|" not in text:
+                await update.effective_message.reply_text(
+                    "❌ Invalid format. Send: plan_key | amount"
+                )
+                return
+
+            plan_type_text, amount_text = [part.strip() for part in text.split("|", 1)]
+            result = payment_service.update_premium_price(plan_type_text, amount_text)
+            await update.effective_message.reply_text(
+                (
+                    f"✅ Premium price updated for {result['display_plan_type']}.\n"
+                    f"New amount: ₹{result['amount_rupees']:.2f}"
+                )
+            )
+            await update.effective_message.reply_text(
+                _build_premium_prices_text(),
+                parse_mode=ParseMode.HTML,
+                reply_markup=_admin_keyboard_for(update.effective_user.id),
+            )
+            return
+
+    except ValueError as exc:
+        await update.effective_message.reply_text(f"❌ {exc}")
     except sqlite3.OperationalError as exc:
         logger.exception(
             "Admin DB operational failure | mode=%s user_id=%s db_path=%s",

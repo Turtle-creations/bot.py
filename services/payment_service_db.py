@@ -2,6 +2,7 @@ import os
 import hashlib
 import hmac
 import json
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -25,6 +26,13 @@ SUBSCRIPTION_PLANS = {
     "year_1": {"name": "1 Year", "amount": 249900, "days": 365},
 }
 
+PREMIUM_PRICE_PLAN_ALIASES = {
+    "week_1": "week_1",
+    "month_1": "month_1",
+    "month_3": "months_3",
+    "months_3": "months_3",
+}
+
 
 logger = get_logger(__name__)
 MAX_WEBHOOK_DUPLICATE_COUNT = 5
@@ -32,8 +40,91 @@ PREMIUM_ACTIVATION_SOURCE_WEBHOOK = "razorpay_webhook"
 
 
 class PaymentService:
+    def _normalize_price_plan_type(self, plan_type: str) -> str | None:
+        return PREMIUM_PRICE_PLAN_ALIASES.get((plan_type or "").strip().lower())
+
+    def _price_setting_key(self, plan_type: str) -> str:
+        normalized = self._normalize_price_plan_type(plan_type)
+        if not normalized:
+            raise ValueError("Invalid premium plan")
+        return f"premium_price:{normalized}"
+
+    def _get_setting_value(self, key: str) -> str | None:
+        with database.connection() as conn:
+            row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return str(row["value"]) if row else None
+
+    def _set_setting_value(self, key: str, value: str) -> None:
+        with database.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO settings (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+                """,
+                (key, value, now_iso()),
+            )
+
+    def get_plan(self, plan_type: str) -> dict:
+        if plan_type not in SUBSCRIPTION_PLANS:
+            raise ValueError("Invalid plan selected")
+
+        plan = dict(SUBSCRIPTION_PLANS[plan_type])
+        if plan_type in {"week_1", "month_1", "months_3"}:
+            stored_value = self._get_setting_value(self._price_setting_key(plan_type))
+            if stored_value is not None:
+                plan["amount"] = int(stored_value)
+        return plan
+
+    def list_premium_prices(self) -> list[dict]:
+        items = []
+        for display_key, internal_key in (("week_1", "week_1"), ("month_1", "month_1"), ("month_3", "months_3")):
+            plan = self.get_plan(internal_key)
+            items.append(
+                {
+                    "key": display_key,
+                    "plan_type": internal_key,
+                    "name": plan["name"],
+                    "amount_paise": int(plan["amount"]),
+                    "amount_rupees": Decimal(int(plan["amount"])) / Decimal("100"),
+                }
+            )
+        return items
+
+    def update_premium_price(self, plan_type: str, amount_text: str) -> dict:
+        normalized_plan_type = self._normalize_price_plan_type(plan_type)
+        if normalized_plan_type not in {"week_1", "month_1", "months_3"}:
+            raise ValueError("Invalid premium plan. Use week_1, month_1, or month_3.")
+
+        try:
+            amount_rupees = Decimal((amount_text or "").strip())
+        except InvalidOperation as exc:
+            raise ValueError("Amount must be numeric.") from exc
+
+        if amount_rupees < Decimal("1"):
+            raise ValueError("Amount must be at least 1.")
+
+        amount_paise = int((amount_rupees * Decimal("100")).quantize(Decimal("1")))
+        self._set_setting_value(self._price_setting_key(normalized_plan_type), str(amount_paise))
+        plan = self.get_plan(normalized_plan_type)
+        logger.info(
+            "premium_price_updated | plan_type=%s amount_paise=%s amount_rupees=%s",
+            normalized_plan_type,
+            amount_paise,
+            f"{Decimal(amount_paise) / Decimal('100'):.2f}",
+        )
+        return {
+            "display_plan_type": "month_3" if normalized_plan_type == "months_3" else normalized_plan_type,
+            "plan_type": normalized_plan_type,
+            "name": plan["name"],
+            "amount_paise": amount_paise,
+            "amount_rupees": Decimal(amount_paise) / Decimal("100"),
+        }
+
     def _compute_premium_expiry(self, user: dict, plan_type: str) -> str:
-        plan = SUBSCRIPTION_PLANS[plan_type]
+        plan = self.get_plan(plan_type)
         now = datetime.now(timezone.utc)
         current_expiry = user.get("premium_expires_at")
         if current_expiry:
@@ -231,7 +322,14 @@ class PaymentService:
         if missing:
             raise ValueError(f"Missing required payment env vars: {', '.join(missing)}")
 
-        plan = SUBSCRIPTION_PLANS[plan_type]
+        plan = self.get_plan(plan_type)
+        logger.info(
+            "premium_price_used_for_order | user_id=%s plan_type=%s amount_paise=%s amount_rupees=%s",
+            user_id,
+            plan_type,
+            plan["amount"],
+            f"{Decimal(int(plan['amount'])) / Decimal('100'):.2f}",
+        )
         payload = {
             "amount": plan["amount"],
             "currency": "INR",

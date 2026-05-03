@@ -161,6 +161,10 @@ def admin_keyboard(can_manage_admins: bool = False) -> InlineKeyboardMarkup:
             InlineKeyboardButton("↩️ Downgrade Premium", callback_data="admin:downgrade_premium"),
         ],
         [
+            InlineKeyboardButton("💰 View Premium Prices", callback_data="admin:view_premium_prices"),
+            InlineKeyboardButton("✏️ Change Premium Price", callback_data="admin:change_premium_price"),
+        ],
+        [
             InlineKeyboardButton("📚 View Exams", callback_data="admin:view_exams"),
             InlineKeyboardButton("👑 View Premium Users", callback_data="admin:view_premium"),
         ],
