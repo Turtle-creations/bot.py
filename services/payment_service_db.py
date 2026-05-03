@@ -28,6 +28,7 @@ SUBSCRIPTION_PLANS = {
 
 logger = get_logger(__name__)
 MAX_WEBHOOK_DUPLICATE_COUNT = 5
+PREMIUM_ACTIVATION_SOURCE_WEBHOOK = "razorpay_webhook"
 
 
 class PaymentService:
@@ -47,13 +48,26 @@ class PaymentService:
             start = now
         return (start + timedelta(days=plan["days"])).replace(microsecond=0).isoformat()
 
-    def ensure_premium_active_for_order(self, order_id: str) -> dict:
-        logger.info("premium activation start | order_id=%s source=ensure_premium_active_for_order", order_id)
+    def ensure_premium_active_for_order(self, order_id: str, *, source: str | None = None) -> dict:
+        logger.info("premium activation start | order_id=%s source=%s", order_id, source)
+        if source != PREMIUM_ACTIVATION_SOURCE_WEBHOOK:
+            logger.warning(
+                "premium_activation_blocked_non_webhook | order_id=%s source=%s",
+                order_id,
+                source,
+            )
+            logger.info(
+                "premium activation end | order_id=%s ok=%s reason=%s",
+                order_id,
+                False,
+                "non_webhook_source",
+            )
+            return {"ok": False, "reason": "non_webhook_source", "activated_now": False}
         order = self.get_order(order_id)
         if not order:
             logger.info("premium activation end | order_id=%s ok=%s reason=%s", order_id, False, "order_not_found")
             return {"ok": False, "reason": "order_not_found"}
-        result = self.ensure_premium_active_for_order_data(order)
+        result = self.ensure_premium_active_for_order_data(order, source=source)
         logger.info(
             "premium activation end | order_id=%s ok=%s reason=%s activated_now=%s",
             order_id,
@@ -63,7 +77,15 @@ class PaymentService:
         )
         return result
 
-    def ensure_premium_active_for_order_data(self, order_data: dict) -> dict:
+    def ensure_premium_active_for_order_data(self, order_data: dict, *, source: str | None = None) -> dict:
+        if source != PREMIUM_ACTIVATION_SOURCE_WEBHOOK:
+            logger.warning(
+                "premium_activation_blocked_non_webhook | order_id=%s source=%s",
+                order_data.get("order_id"),
+                source,
+            )
+            return {"ok": False, "reason": "non_webhook_source", "activated_now": False}
+
         plan_type = order_data.get("plan_type")
         if plan_type not in SUBSCRIPTION_PLANS:
             return {"ok": True, "reason": "non_premium_plan", "activated_now": False}
@@ -464,9 +486,12 @@ class PaymentService:
         order_id = payment_entity.get("order_id")
         amount = payment_entity.get("amount")
         currency = payment_entity.get("currency", "INR")
+        payment_status = payment_entity.get("status")
 
         if not payment_id or not order_id or amount is None:
             raise ValueError("Missing payment fields in webhook payload")
+        if payment_status != "captured":
+            raise ValueError("Webhook payment status is not captured")
 
         with database.connection() as conn:
             duplicate_status = self._get_duplicate_status(conn, event_id=event_id, payment_id=payment_id, order_id=order_id)
@@ -550,7 +575,7 @@ class PaymentService:
                     plan_type,
                     amount,
                     currency,
-                    payment_entity.get("status", "captured"),
+                    payment_status,
                     now_iso(),
                     expiry,
                     json.dumps(payload),
@@ -561,7 +586,10 @@ class PaymentService:
                 ("paid", order_id),
             )
 
-        activation_result = self.ensure_premium_active_for_order(order_id)
+        activation_result = self.ensure_premium_active_for_order(
+            order_id,
+            source=PREMIUM_ACTIVATION_SOURCE_WEBHOOK,
+        )
         if not should_activate_premium:
             logger.info(
                 "Webhook payment recorded without premium activation | event_id=%s order_id=%s plan_type=%s",
