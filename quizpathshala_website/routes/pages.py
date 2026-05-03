@@ -1,6 +1,6 @@
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 
-from config import BOT_URL, CANONICAL_URL, SITE_NAME, SITE_TAGLINE, SUPPORT_EMAIL, SUPPORT_HOURS, SUPPORT_TELEGRAM
+from config import BOT_URL, CANONICAL_URL, SITE_NAME, SITE_TAGLINE, SUPPORT_HOURS, SUPPORT_TELEGRAM
 from services.site_content import FEATURE_ITEMS, LEGAL_PAGES
 from services.web_admin_service import web_admin_service
 from services.web_identity_service import web_identity_service
@@ -16,7 +16,6 @@ def _shared_context() -> dict:
         "site_name": SITE_NAME,
         "tagline": SITE_TAGLINE,
         "bot_url": BOT_URL,
-        "support_email": SUPPORT_EMAIL,
         "support_hours": SUPPORT_HOURS,
         "support_telegram": SUPPORT_TELEGRAM,
         "canonical_url": CANONICAL_URL,
@@ -57,8 +56,8 @@ def contact():
         "title": "Contact & Support",
         "intro": "Need help with quiz access, premium status, or general support? Reach out directly and the QuizPathshala team can review your request.",
         "sections": [
-            f"Telegram support: {SUPPORT_TELEGRAM}",
-            f"Email support: {SUPPORT_EMAIL}",
+            "Telegram: @QuizPathshala_bot",
+            f"Link: {SUPPORT_TELEGRAM}",
             f"Support hours: {SUPPORT_HOURS}",
         ],
     }
