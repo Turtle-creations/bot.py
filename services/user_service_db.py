@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from config import ADMINS, SUPREME_ADMIN_ID
 from db.database import database
@@ -9,7 +9,22 @@ logger = get_logger(__name__)
 
 
 def now_iso() -> str:
-    return datetime.utcnow().replace(microsecond=0).isoformat()
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def parse_utc_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+
+    return parsed
 
 
 class UserService:
@@ -358,6 +373,10 @@ class UserService:
             )
 
     def set_premium_expiry(self, user_id: int, expiry_iso: str | None, is_premium: bool):
+        normalized_expiry = expiry_iso
+        if expiry_iso:
+            parsed_expiry = parse_utc_datetime(expiry_iso)
+            normalized_expiry = parsed_expiry.replace(microsecond=0).isoformat() if parsed_expiry else expiry_iso
         with database.connection() as conn:
             conn.execute(
                 """
@@ -365,7 +384,7 @@ class UserService:
                 SET is_premium = ?, premium_expires_at = ?, updated_at = ?
                 WHERE user_id = ?
                 """,
-                (1 if is_premium else 0, expiry_iso, now_iso(), user_id),
+                (1 if is_premium else 0, normalized_expiry, now_iso(), user_id),
             )
         return self.get_user(user_id)
 
@@ -385,9 +404,8 @@ class UserService:
         if not expiry:
             return user
 
-        try:
-            expiry_dt = datetime.fromisoformat(expiry)
-        except ValueError:
+        expiry_dt = parse_utc_datetime(expiry)
+        if not expiry_dt:
             logger.warning(
                 "Premium normalization skipped | user_id=%s reason=invalid_expiry_format premium_expires_at=%s",
                 user_id,
@@ -395,7 +413,7 @@ class UserService:
             )
             return user
 
-        if expiry_dt > datetime.utcnow():
+        if expiry_dt > datetime.now(timezone.utc):
             return user
 
         if user.get("is_premium"):

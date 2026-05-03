@@ -9,6 +9,11 @@ from services.user_service_db import user_service
 from utils.formatters import format_premium_text
 
 
+def _load_premium_user(tg_user) -> dict:
+    user = user_service.get_user(tg_user.id)
+    return user if user else user_service.ensure_user(tg_user)
+
+
 def _payment_unavailable_text(user: dict, missing_vars: list[str]) -> str:
     if user_service.is_admin(user["user_id"]):
         missing_text = ", ".join(missing_vars)
@@ -25,7 +30,7 @@ def _payment_unavailable_text(user: dict, missing_vars: list[str]) -> str:
 
 
 async def premium_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = user_service.ensure_user(update.effective_user)
+    user = _load_premium_user(update.effective_user)
     await update.effective_message.reply_text(payment_service.premium_status_text(user))
 
 
@@ -33,12 +38,13 @@ async def subscribe_premium_handler(update: Update, context: ContextTypes.DEFAUL
     query = update.callback_query
     await query.answer()
 
-    user = user_service.ensure_user(query.from_user)
+    user = _load_premium_user(query.from_user)
     data = query.data
 
     if data == "premium:view":
-        quiz_access_text = "All quiz sets" if premium_service.is_premium(user["user_id"]) else "Unlocked sets only"
-        if premium_service.is_premium(user["user_id"]):
+        is_premium_active = premium_service.is_premium(user["user_id"])
+        quiz_access_text = "All quiz sets" if is_premium_active else "Unlocked sets only"
+        if is_premium_active:
             pdf_text = "Unlimited"
         else:
             pdf_text = "1" if user_service.can_generate_free_pdf(user) else "0"

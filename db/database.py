@@ -161,9 +161,10 @@ class Database:
 
     @contextmanager
     def connection(self):
-        conn = sqlite3.connect(self.path)
+        conn = sqlite3.connect(self.path, timeout=30)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=MEMORY")
+        conn.execute("PRAGMA busy_timeout=30000")
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA temp_store=MEMORY")
 
         try:

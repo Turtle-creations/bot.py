@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from utils.file_manager import load_json, save_json
 
@@ -14,7 +14,7 @@ PREMIUM_PLANS = [
 
 
 def _now():
-    return datetime.now()
+    return datetime.now(timezone.utc)
 
 
 def _parse(dt_str):
@@ -22,7 +22,10 @@ def _parse(dt_str):
         return None
 
     try:
-        return datetime.strptime(dt_str, DATE_FMT)
+        parsed = datetime.strptime(dt_str, DATE_FMT)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
     except Exception:
         return None
 

@@ -1,7 +1,7 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from db.database import database
-from services.user_service_db import now_iso, user_service
+from services.user_service_db import now_iso, parse_utc_datetime, user_service
 
 
 class PremiumService:
@@ -17,10 +17,10 @@ class PremiumService:
         if not expiry:
             return True
 
-        try:
-            return datetime.fromisoformat(expiry) > datetime.utcnow()
-        except ValueError:
+        expiry_dt = parse_utc_datetime(expiry)
+        if not expiry_dt:
             return False
+        return expiry_dt > datetime.now(timezone.utc)
 
     def status_text(self, user: dict) -> str:
         if not user:
@@ -47,13 +47,13 @@ class PremiumService:
             return None
 
         current_expiry = user.get("premium_expires_at")
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         if current_expiry:
-            try:
-                current_dt = datetime.fromisoformat(current_expiry)
+            current_dt = parse_utc_datetime(current_expiry)
+            if current_dt:
                 start = current_dt if current_dt > now else now
-            except ValueError:
+            else:
                 start = now
         else:
             start = now

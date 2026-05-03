@@ -13,7 +13,7 @@ from config import (
     RAZORPAY_WEBHOOK_SECRET,
 )
 from db.database import database
-from services.user_service_db import now_iso, user_service
+from services.user_service_db import now_iso, parse_utc_datetime, user_service
 from utils.logging_utils import get_logger
 
 
@@ -79,19 +79,14 @@ class PaymentService:
 
         premium_active = bool(user.get("is_premium")) and bool(user.get("premium_expires_at"))
         if premium_active:
-            try:
-                expiry_dt = datetime.fromisoformat(user["premium_expires_at"])
-                if expiry_dt.tzinfo is None:
-                    expiry_dt = expiry_dt.replace(tzinfo=timezone.utc)
-                if expiry_dt > datetime.now(timezone.utc):
-                    return {
-                        "ok": True,
-                        "reason": "already_active",
-                        "activated_now": False,
-                        "expiry": user["premium_expires_at"],
-                    }
-            except ValueError:
-                pass
+            expiry_dt = parse_utc_datetime(user["premium_expires_at"])
+            if expiry_dt and expiry_dt > datetime.now(timezone.utc):
+                return {
+                    "ok": True,
+                    "reason": "already_active",
+                    "activated_now": False,
+                    "expiry": user["premium_expires_at"],
+                }
 
         expiry = self._compute_premium_expiry(user, plan_type)
         user_service.set_premium_expiry(user_id, expiry, True)
@@ -648,8 +643,9 @@ class PaymentService:
         )
 
     def premium_status_text(self, user: dict) -> str:
-        if user.get("is_premium") and user.get("premium_expires_at"):
-            return f"💎 Premium active until {user['premium_expires_at']} UTC"
+        expiry = parse_utc_datetime(user.get("premium_expires_at"))
+        if user.get("is_premium") and expiry and expiry > datetime.now(timezone.utc):
+            return f"💎 Premium active until {expiry.replace(microsecond=0).isoformat()} UTC"
         return "🆓 Free plan active"
 
 
