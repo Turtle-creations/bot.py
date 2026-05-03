@@ -819,7 +819,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         if action == "test_send":
             ok, result_message = await notification_service.send_notification_now(notification_id)
             await query.message.reply_text(
-                f"✅ Scheduled notification test sent. {result_message}" if ok else f"❌ {result_message}"
+                f"Scheduled notification queued. {result_message}" if ok else result_message
             )
             await _show_notification_details(query.message, notification_id)
             return
@@ -1703,9 +1703,9 @@ async def admin_text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         elif mode == "broadcast":
-            sent, failed = await notification_service.broadcast(text)
+            queued, result_message = await notification_service.queue_broadcast(text, source="admin_broadcast")
             await update.effective_message.reply_text(
-                f"✅ Broadcast completed. Sent: {sent}, Failed: {failed}"
+                f"Broadcast queued. {result_message}" if queued else result_message
             )
 
         elif mode == "add_admin":

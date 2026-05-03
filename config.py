@@ -19,6 +19,14 @@ def _read_admin_ids(raw_value: str) -> list[int]:
     return items
 
 
+def _read_bool_env(name: str, default: bool = False) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
 SUPREME_ADMIN_ID = int(os.getenv("SUPREME_ADMIN_ID", "1341448466"))
 ADMINS = {
@@ -31,3 +39,4 @@ PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL")
 RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "")
 RAZORPAY_WEBHOOK_SECRET = os.getenv("RAZORPAY_WEBHOOK_SECRET", "")
+PAYMENT_DEBUG = _read_bool_env("PAYMENT_DEBUG", False)

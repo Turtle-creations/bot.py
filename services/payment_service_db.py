@@ -26,6 +26,7 @@ SUBSCRIPTION_PLANS = {
 
 
 logger = get_logger(__name__)
+MAX_WEBHOOK_DUPLICATE_COUNT = 5
 
 
 class PaymentService:
@@ -437,10 +438,7 @@ class PaymentService:
             raise ValueError("Missing payment fields in webhook payload")
 
         with database.connection() as conn:
-            existing = conn.execute(
-                "SELECT event_id FROM processed_webhooks WHERE event_id = ?",
-                (event_id,),
-            ).fetchone()
+            duplicate_status = self._get_duplicate_status(conn, event_id=event_id, payment_id=payment_id, order_id=order_id)
             order = conn.execute(
                 "SELECT * FROM payment_orders WHERE order_id = ?",
                 (order_id,),
@@ -449,40 +447,27 @@ class PaymentService:
                 raise ValueError("Order not found for captured payment")
 
             order_data = dict(order)
-            if existing:
-                activation_result = self.ensure_premium_active_for_order_data(order_data)
-                logger.info("Duplicate webhook already processed | event_id=%s order_id=%s", event_id, order_id)
-                return {
-                    "status": "already_processed",
-                    "reason": "duplicate_event",
-                    "user_id": order_data["user_id"],
-                    "plan_type": order_data["plan_type"],
-                    "activation_result": activation_result,
-                }
-
-            existing_payment = conn.execute(
-                "SELECT payment_id FROM payments WHERE payment_id = ? OR order_id = ?",
-                (payment_id, order_id),
-            ).fetchone()
-            if existing_payment:
-                activation_result = self.ensure_premium_active_for_order_data(order_data)
+            if duplicate_status["duplicate"]:
+                self._record_duplicate_attempt(
+                    conn,
+                    event_id=event_id,
+                    payment_id=payment_id,
+                    order_id=order_id,
+                    existing_event=duplicate_status["existing_event"],
+                )
                 logger.info(
-                    "Captured payment already processed | event_id=%s order_id=%s payment_id=%s order_status=%s",
+                    "Duplicate webhook already processed | event_id=%s order_id=%s payment_id=%s reason=%s duplicate_count=%s",
                     event_id,
                     order_id,
                     payment_id,
-                    order_data.get("status"),
-                )
-                conn.execute(
-                    "INSERT OR REPLACE INTO processed_webhooks (event_id, received_at) VALUES (?, ?)",
-                    (event_id, now_iso()),
+                    duplicate_status["reason"],
+                    duplicate_status["duplicate_count"],
                 )
                 return {
                     "status": "already_processed",
-                    "reason": "payment_exists",
+                    "reason": duplicate_status["reason"],
                     "user_id": order_data["user_id"],
                     "plan_type": order_data["plan_type"],
-                    "activation_result": activation_result,
                 }
 
             expected_amount = order_data["amount"]
@@ -513,8 +498,12 @@ class PaymentService:
                 expiry = self._compute_premium_expiry(user, plan_type)
 
             conn.execute(
-                "INSERT INTO processed_webhooks (event_id, received_at) VALUES (?, ?)",
-                (event_id, now_iso()),
+                """
+                INSERT INTO processed_webhooks (
+                    event_id, payment_id, order_id, received_at, last_seen_at, duplicate_count
+                ) VALUES (?, ?, ?, ?, ?, 0)
+                """,
+                (event_id, payment_id, order_id, now_iso(), now_iso()),
             )
             conn.execute(
                 """
@@ -557,6 +546,96 @@ class PaymentService:
             "expiry": expiry,
             "activation_result": activation_result,
         }
+
+    def check_processed_webhook(self, event_id: str, payment_id: str | None, order_id: str | None) -> dict:
+        with database.connection() as conn:
+            duplicate_status = self._get_duplicate_status(
+                conn,
+                event_id=event_id,
+                payment_id=payment_id,
+                order_id=order_id,
+            )
+            if not duplicate_status["duplicate"]:
+                return {"duplicate": False}
+
+            self._record_duplicate_attempt(
+                conn,
+                event_id=event_id,
+                payment_id=payment_id,
+                order_id=order_id,
+                existing_event=duplicate_status["existing_event"],
+            )
+            return duplicate_status
+
+    def _get_duplicate_status(self, conn, *, event_id: str, payment_id: str | None, order_id: str | None) -> dict:
+        event_row = conn.execute(
+            "SELECT event_id, duplicate_count FROM processed_webhooks WHERE event_id = ?",
+            (event_id,),
+        ).fetchone()
+        if event_row:
+            return {
+                "duplicate": True,
+                "reason": "duplicate_event",
+                "existing_event": event_row["event_id"],
+                "duplicate_count": min(int(event_row["duplicate_count"] or 0) + 1, MAX_WEBHOOK_DUPLICATE_COUNT),
+            }
+
+        payment_row = None
+        if payment_id or order_id:
+            payment_row = conn.execute(
+                """
+                SELECT payment_id, order_id
+                FROM payments
+                WHERE (? IS NOT NULL AND payment_id = ?)
+                   OR (? IS NOT NULL AND order_id = ?)
+                """,
+                (payment_id, payment_id, order_id, order_id),
+            ).fetchone()
+        if payment_row:
+            return {
+                "duplicate": True,
+                "reason": "payment_exists",
+                "existing_event": None,
+                "duplicate_count": 1,
+            }
+
+        return {"duplicate": False}
+
+    def _record_duplicate_attempt(
+        self,
+        conn,
+        *,
+        event_id: str,
+        payment_id: str | None,
+        order_id: str | None,
+        existing_event: str | None,
+    ) -> None:
+        timestamp = now_iso()
+        target_event_id = existing_event or event_id
+        current_row = conn.execute(
+            "SELECT duplicate_count FROM processed_webhooks WHERE event_id = ?",
+            (target_event_id,),
+        ).fetchone()
+        if current_row:
+            next_count = min(int(current_row["duplicate_count"] or 0) + 1, MAX_WEBHOOK_DUPLICATE_COUNT)
+            conn.execute(
+                """
+                UPDATE processed_webhooks
+                SET last_seen_at = ?, duplicate_count = ?, payment_id = COALESCE(payment_id, ?), order_id = COALESCE(order_id, ?)
+                WHERE event_id = ?
+                """,
+                (timestamp, next_count, payment_id, order_id, target_event_id),
+            )
+            return
+
+        conn.execute(
+            """
+            INSERT INTO processed_webhooks (
+                event_id, payment_id, order_id, received_at, last_seen_at, duplicate_count
+            ) VALUES (?, ?, ?, ?, ?, 1)
+            """,
+            (event_id, payment_id, order_id, timestamp, timestamp),
+        )
 
     def premium_status_text(self, user: dict) -> str:
         if user.get("is_premium") and user.get("premium_expires_at"):

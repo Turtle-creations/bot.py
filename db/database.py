@@ -107,7 +107,11 @@ class Database:
 
                 CREATE TABLE IF NOT EXISTS processed_webhooks (
                     event_id TEXT PRIMARY KEY,
-                    received_at TEXT NOT NULL
+                    payment_id TEXT,
+                    order_id TEXT,
+                    received_at TEXT NOT NULL,
+                    last_seen_at TEXT,
+                    duplicate_count INTEGER NOT NULL DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS quiz_attempts (
@@ -150,6 +154,10 @@ class Database:
             self._ensure_column(conn, "exam_sets", "is_premium_locked", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "support_messages", "admin_chat_id", "INTEGER")
             self._ensure_column(conn, "support_messages", "admin_message_id", "INTEGER")
+            self._ensure_column(conn, "processed_webhooks", "payment_id", "TEXT")
+            self._ensure_column(conn, "processed_webhooks", "order_id", "TEXT")
+            self._ensure_column(conn, "processed_webhooks", "last_seen_at", "TEXT")
+            self._ensure_column(conn, "processed_webhooks", "duplicate_count", "INTEGER NOT NULL DEFAULT 0")
 
     @contextmanager
     def connection(self):

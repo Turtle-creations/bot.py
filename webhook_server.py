@@ -2,13 +2,13 @@ import html
 import hashlib
 import json
 import os
-from queue import Empty, Queue
+from queue import Empty, Full, Queue
 from threading import Thread
 
 import httpx
 from flask import Flask, jsonify, request
 
-from config import ADMINS, PUBLIC_BASE_URL, RAZORPAY_KEY_ID, SUPREME_ADMIN_ID, TELEGRAM_TOKEN
+from config import ADMINS, PAYMENT_DEBUG, PUBLIC_BASE_URL, RAZORPAY_KEY_ID, SUPREME_ADMIN_ID, TELEGRAM_TOKEN
 from services.payment_service_db import SUBSCRIPTION_PLANS, payment_service
 from utils.logging_utils import get_logger
 
@@ -16,7 +16,8 @@ from utils.logging_utils import get_logger
 logger = get_logger(__name__)
 
 app = Flask(__name__)
-_TELEGRAM_QUEUE: Queue[dict] = Queue()
+_TELEGRAM_QUEUE_MAX_SIZE = 1000
+_TELEGRAM_QUEUE: Queue[dict] = Queue(maxsize=_TELEGRAM_QUEUE_MAX_SIZE)
 _ADMIN_DEBUG_STEPS = {
     "webhook_received",
     "webhook_signature_invalid",
@@ -82,10 +83,15 @@ def _enqueue_telegram_message(chat_id: int, text: str):
     if not token:
         logger.warning("Telegram send skipped | chat_id=%s reason=missing_bot_token", chat_id)
         return
-    _TELEGRAM_QUEUE.put({"chat_id": int(chat_id), "text": text})
+    try:
+        _TELEGRAM_QUEUE.put_nowait({"chat_id": int(chat_id), "text": text})
+    except Full:
+        logger.warning("Telegram queue full | chat_id=%s max_size=%s", chat_id, _TELEGRAM_QUEUE_MAX_SIZE)
 
 
 def _notify_payment_debug(step: str, **fields):
+    if not PAYMENT_DEBUG:
+        return
     if step not in _ADMIN_DEBUG_STEPS:
         return
 
@@ -605,13 +611,6 @@ def razorpay_webhook():
         preview_order_id,
         preview_final_order.get("status") if preview_final_order else None,
     )
-    _trace_payment_step(
-        "webhook_received",
-        order_id=preview_order_id,
-        payment_id=preview_payment_id,
-        final_status=preview_final_order.get("status") if preview_final_order else None,
-    )
-
     if not x_razorpay_signature:
         logger.warning("Webhook rejected | event_id=%s reason=missing_signature", x_razorpay_event_id)
         _trace_payment_step(
@@ -646,12 +645,6 @@ def razorpay_webhook():
         preview_payment_id,
         preview_event_name,
     )
-    _trace_payment_step(
-        "webhook_signature_valid",
-        order_id=preview_order_id,
-        payment_id=preview_payment_id,
-        final_status=preview_final_order.get("status") if preview_final_order else None,
-    )
     if payload_preview:
         payload = payload_preview
     else:
@@ -671,6 +664,33 @@ def razorpay_webhook():
         x_razorpay_event_id
         or payload.get("payload", {}).get("payment", {}).get("entity", {}).get("id")
         or hashlib.sha256(raw_body).hexdigest()
+    )
+    duplicate_status = payment_service.check_processed_webhook(
+        derived_event_id,
+        payload.get("payload", {}).get("payment", {}).get("entity", {}).get("id"),
+        payload.get("payload", {}).get("payment", {}).get("entity", {}).get("order_id"),
+    )
+    if duplicate_status.get("duplicate"):
+        logger.info(
+            "Webhook duplicate ignored | event_id=%s payment_id=%s order_id=%s reason=%s",
+            derived_event_id,
+            payload.get("payload", {}).get("payment", {}).get("entity", {}).get("id"),
+            payload.get("payload", {}).get("payment", {}).get("entity", {}).get("order_id"),
+            duplicate_status.get("reason"),
+        )
+        return jsonify({"status": "already_processed", "reason": duplicate_status.get("reason")}), 200
+
+    _trace_payment_step(
+        "webhook_signature_valid",
+        order_id=preview_order_id,
+        payment_id=preview_payment_id,
+        final_status=preview_final_order.get("status") if preview_final_order else None,
+    )
+    _trace_payment_step(
+        "webhook_received",
+        order_id=preview_order_id,
+        payment_id=preview_payment_id,
+        final_status=preview_final_order.get("status") if preview_final_order else None,
     )
     try:
         result = payment_service.process_captured_payment(derived_event_id, payload)
@@ -702,7 +722,7 @@ def razorpay_webhook():
             final_status=final_order.get("status") if final_order else None,
         )
         activation_result = result.get("activation_result") or {}
-        if activation_result.get("activated_now") and result.get("user_id"):
+        if result.get("status") == "processed" and activation_result.get("activated_now") and result.get("user_id"):
             _enqueue_telegram_message(
                 int(result["user_id"]),
                 "✅ Premium activated successfully. Use /premium_status",

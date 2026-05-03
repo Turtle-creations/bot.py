@@ -182,9 +182,9 @@ async def admin_text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.effective_message.reply_text("Question deleted successfully.")
 
         elif mode == "broadcast":
-            sent, failed = await notification_service.broadcast(text)
+            queued, result_message = await notification_service.queue_broadcast(text, source="admin_broadcast")
             await update.effective_message.reply_text(
-                f"Broadcast completed. Sent: {sent}, Failed: {failed}"
+                f"Broadcast queued. {result_message}" if queued else result_message
             )
 
         elif mode == "schedule":

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import asyncio
 import json
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
@@ -27,6 +28,8 @@ DAY_LABELS = {
 class NotificationService:
     def __init__(self):
         self.application = None
+        self._broadcast_queue = None
+        self._broadcast_worker_task = None
 
     def register_jobs(self, application):
         self.application = application
@@ -70,6 +73,33 @@ class NotificationService:
         )
         return sent, failed
 
+    async def queue_broadcast(self, message: str, *, notification_id: int | None = None, source: str = "manual") -> tuple[bool, str]:
+        if not self.application:
+            logger.warning("Notification queue skipped because application is not registered")
+            return False, "Notification worker is not ready."
+
+        self._ensure_broadcast_worker()
+        try:
+            self._broadcast_queue.put_nowait(
+                {
+                    "message": message,
+                    "notification_id": notification_id,
+                    "source": source,
+                }
+            )
+        except asyncio.QueueFull:
+            logger.warning("Notification queue full | source=%s notification_id=%s", source, notification_id)
+            return False, "Notification queue is full. Try again shortly."
+
+        queue_size = self._broadcast_queue.qsize()
+        logger.info(
+            "Notification queued | source=%s notification_id=%s queue_size=%s",
+            source,
+            notification_id,
+            queue_size,
+        )
+        return True, f"Notification queued. Queue size: {queue_size}."
+
     async def send_notification_now(self, notification_id: int) -> tuple[bool, str]:
         notification = self.get_schedule(notification_id)
         if not notification:
@@ -84,8 +114,11 @@ class NotificationService:
             notification["day_of_week"],
             notification["is_active"],
         )
-        sent, failed = await self.broadcast(notification["message"])
-        return True, f"Sent: {sent}, Failed: {failed}"
+        return await self.queue_broadcast(
+            notification["message"],
+            notification_id=notification["notification_id"],
+            source="test_send",
+        )
 
     def create_schedule(
         self,
@@ -310,18 +343,16 @@ class NotificationService:
             INDIA_TZ,
         )
 
-        sent, failed = await self.broadcast(payload["message"])
-        with database.connection() as conn:
-            conn.execute(
-                "UPDATE notifications SET last_sent_at = ? WHERE notification_id = ?",
-                (now_iso(), payload["notification_id"]),
-            )
-
+        queued, result_message = await self.queue_broadcast(
+            payload["message"],
+            notification_id=payload["notification_id"],
+            source="scheduled_job",
+        )
         logger.info(
-            "Scheduled notification job finished | notification_id=%s sent=%s failed=%s",
+            "Scheduled notification job queued | notification_id=%s queued=%s result=%s",
             payload["notification_id"],
-            sent,
-            failed,
+            queued,
+            result_message,
         )
 
     def _migrate_legacy_notification(self):
@@ -404,6 +435,45 @@ class NotificationService:
 
     def _india_now(self) -> datetime:
         return datetime.now(INDIA_TZ)
+
+    def _ensure_broadcast_worker(self):
+        if self._broadcast_queue is None:
+            self._broadcast_queue = asyncio.Queue(maxsize=10)
+
+        if self._broadcast_worker_task and not self._broadcast_worker_task.done():
+            return
+
+        self._broadcast_worker_task = asyncio.create_task(self._broadcast_worker())
+
+    async def _broadcast_worker(self):
+        logger.info("Notification broadcast worker started")
+        while True:
+            payload = await self._broadcast_queue.get()
+            try:
+                sent, failed = await self.broadcast(payload["message"])
+                notification_id = payload.get("notification_id")
+                if notification_id:
+                    with database.connection() as conn:
+                        conn.execute(
+                            "UPDATE notifications SET last_sent_at = ? WHERE notification_id = ?",
+                            (now_iso(), notification_id),
+                        )
+                logger.info(
+                    "Notification worker completed | source=%s notification_id=%s sent=%s failed=%s",
+                    payload.get("source"),
+                    notification_id,
+                    sent,
+                    failed,
+                )
+            except Exception as exc:
+                logger.exception(
+                    "Notification worker failed | source=%s notification_id=%s reason=%s",
+                    payload.get("source"),
+                    payload.get("notification_id"),
+                    exc,
+                )
+            finally:
+                self._broadcast_queue.task_done()
 
 
 notification_service = NotificationService()
