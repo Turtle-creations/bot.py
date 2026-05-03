@@ -54,6 +54,11 @@ def _resolve_bot_link() -> str:
     return f"https://t.me/{bot_username}" if bot_username else ""
 
 
+def _resolve_bot_app_link(start_param: str = "payment_success") -> str:
+    bot_username = _resolve_bot_username()
+    return f"tg://resolve?domain={bot_username}&start={start_param}" if bot_username else ""
+
+
 def _resolve_bot_deep_link(start_param: str = "payment_success") -> str:
     bot_username = _resolve_bot_username()
     return f"https://t.me/{bot_username}?start={start_param}" if bot_username else ""
@@ -151,7 +156,11 @@ def _render_status_page(
     action_label: str | None = None,
     fallback_url: str | None = None,
     fallback_label: str | None = None,
+    show_close_button: bool = False,
+    close_hint: str | None = None,
     auto_redirect_url: str | None = None,
+    secondary_redirect_url: str | None = None,
+    secondary_redirect_delay_ms: int | None = None,
     auto_redirect_delay_ms: int | None = None,
 ) -> str:
     palette = {
@@ -167,7 +176,6 @@ def _render_status_page(
         <head>
           <meta charset="utf-8" />
           <title>{html.escape(title)}</title>
-          {f'<meta http-equiv="refresh" content="{max(1, int((auto_redirect_delay_ms or 3000) / 1000))};url={html.escape(auto_redirect_url or "")}" />' if auto_redirect_url and auto_redirect_delay_ms else ""}
         </head>
         <body style="font-family: Arial, sans-serif; max-width: 640px; margin: 48px auto; padding: 0 16px;">
           <div style="border: 1px solid #e5e7eb; border-radius: 16px; padding: 24px;">
@@ -177,11 +185,30 @@ def _render_status_page(
             <h2 style="margin-top: 16px; color: {accent};">{html.escape(title)}</h2>
             <p style="font-size: 16px; line-height: 1.6;">{html.escape(message)}</p>
             <p style="color: #4b5563; line-height: 1.6;">{html.escape(detail)}</p>
-            {f'<p style="color: #6b7280;">Redirecting in {max(1, int((auto_redirect_delay_ms or 3000) / 1000))} seconds...</p>' if auto_redirect_url and auto_redirect_delay_ms else ""}
-            {f'<p style="margin-top: 20px;"><a href="{html.escape(action_url or "")}" style="display: inline-block; background: {accent}; color: white; text-decoration: none; padding: 12px 18px; border-radius: 10px; font-weight: 700;">{html.escape(action_label or "Open")}</a></p>' if action_url and action_label else ""}
+            {f'<p id="redirect-countdown" style="color: #6b7280;">Redirecting in {max(1, int((auto_redirect_delay_ms or 3000) / 1000))} seconds...</p>' if auto_redirect_url and auto_redirect_delay_ms else ""}
+            {f'<p style="margin-top: 20px;"><a href="{html.escape(action_url or "")}" style="display: inline-block; background: {accent}; color: white; text-decoration: none; padding: 12px 18px; border-radius: 10px; font-weight: 700; margin-right: 12px;">{html.escape(action_label or "Open")}</a>{f"<button type=\"button\" onclick=\"window.close()\" style=\"display: inline-block; background: #e5e7eb; color: #111827; border: 0; padding: 12px 18px; border-radius: 10px; font-weight: 700; cursor: pointer;\">Close this page</button>" if show_close_button else ""}</p>' if (action_url and action_label) or show_close_button else ""}
             {f'<p style="margin-top: 12px;"><a href="{html.escape(fallback_url or "")}" style="color: {accent}; text-decoration: underline; font-weight: 600;">{html.escape(fallback_label or "Open in Telegram")}</a></p>' if fallback_url and fallback_label else ""}
+            {f'<p style="margin-top: 16px; color: #6b7280; line-height: 1.6;">{html.escape(close_hint)}</p>' if close_hint else ""}
           </div>
-          {f'<script>setTimeout(function () {{ window.location.href = {json.dumps(auto_redirect_url)}; }}, {int(auto_redirect_delay_ms or 3000)});</script>' if auto_redirect_url and auto_redirect_delay_ms else ""}
+          {f'''<script>
+            (function() {{
+              var countdownEl = document.getElementById("redirect-countdown");
+              var remaining = {max(1, int((auto_redirect_delay_ms or 3000) / 1000))};
+              if (countdownEl) {{
+                var timer = setInterval(function () {{
+                  remaining -= 1;
+                  if (remaining <= 0) {{
+                    countdownEl.textContent = "Redirecting now...";
+                    clearInterval(timer);
+                  }} else {{
+                    countdownEl.textContent = "Redirecting in " + remaining + " seconds...";
+                  }}
+                }}, 1000);
+              }}
+              setTimeout(function () {{ window.location.href = {json.dumps(auto_redirect_url)}; }}, {int(auto_redirect_delay_ms or 3000)});
+              {f'setTimeout(function () {{ window.location.href = {json.dumps(secondary_redirect_url)}; }}, {int(secondary_redirect_delay_ms or 4000)});' if secondary_redirect_url and secondary_redirect_delay_ms else ''}
+            }})();
+          </script>''' if auto_redirect_url and auto_redirect_delay_ms else ""}
         </body>
         </html>
         """
@@ -653,7 +680,7 @@ def payment_success():
                 order_id,
                 payment_id,
                 final_order.get("status"),
-                _resolve_bot_link(),
+                _resolve_bot_app_link(),
                 _resolve_bot_deep_link(),
             )
             route_outcome = "success"
@@ -662,12 +689,16 @@ def payment_success():
                 message="Your premium payment was verified successfully.",
                 detail="Payment verification is complete. Premium activation happens only from the verified Razorpay webhook, so please return to the bot and use /premium_status to confirm it is active.",
                 status_kind="success",
-                action_url=_resolve_bot_deep_link() or _resolve_bot_link() or None,
-                action_label="Return to Bot" if (_resolve_bot_deep_link() or _resolve_bot_link()) else None,
+                action_url=_resolve_bot_app_link() or _resolve_bot_deep_link() or None,
+                action_label="Open Bot" if (_resolve_bot_app_link() or _resolve_bot_deep_link()) else None,
                 fallback_url=_resolve_bot_deep_link() or None,
                 fallback_label="Open in Telegram" if _resolve_bot_deep_link() else None,
-                auto_redirect_url=_resolve_bot_link() or None,
-                auto_redirect_delay_ms=3000 if _resolve_bot_link() else None,
+                show_close_button=True,
+                close_hint="If page does not close automatically, tap X/Back and return to bot.",
+                auto_redirect_url=_resolve_bot_app_link() or None,
+                secondary_redirect_url=_resolve_bot_deep_link() or None,
+                auto_redirect_delay_ms=3000 if _resolve_bot_app_link() else None,
+                secondary_redirect_delay_ms=4000 if _resolve_bot_deep_link() else None,
             )
 
         if not (final_order and final_order.get("status") == "paid"):
