@@ -76,7 +76,28 @@ class PaymentService:
             stored_value = self._get_setting_value(self._price_setting_key(plan_type))
             if stored_value is not None:
                 plan["amount"] = int(stored_value)
+                logger.info(
+                    "premium_price_loaded_from_settings | plan_type=%s amount_paise=%s amount_rupees=%s",
+                    plan_type,
+                    plan["amount"],
+                    f"{Decimal(int(plan['amount'])) / Decimal('100'):.2f}",
+                )
         return plan
+
+    def list_checkout_plans(self) -> list[dict]:
+        plans = []
+        for plan_type in ("week_1", "month_1", "months_3", "year_1"):
+            plan = self.get_plan(plan_type)
+            plans.append(
+                {
+                    "plan_type": plan_type,
+                    "name": plan["name"],
+                    "days": plan["days"],
+                    "amount": int(plan["amount"]),
+                    "amount_rupees": Decimal(int(plan["amount"])) / Decimal("100"),
+                }
+            )
+        return plans
 
     def list_premium_prices(self) -> list[dict]:
         items = []

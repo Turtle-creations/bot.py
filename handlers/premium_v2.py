@@ -3,10 +3,14 @@ from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from keyboards.app_keyboards import payment_link_keyboard, premium_keyboard, premium_plan_keyboard
-from services.payment_service_db import SUBSCRIPTION_PLANS, payment_service
+from services.payment_service_db import payment_service
 from services.premium_service_db import premium_service
 from services.user_service_db import user_service
 from utils.formatters import format_premium_text
+from utils.logging_utils import get_logger
+
+
+logger = get_logger(__name__)
 
 
 def _load_premium_user(tg_user) -> dict:
@@ -69,13 +73,19 @@ async def subscribe_premium_handler(update: Update, context: ContextTypes.DEFAUL
             )
             return
 
+        plans = payment_service.list_checkout_plans()
+        plan_lines = [
+            f"• {plan['name']} - ₹{plan['amount_rupees']:.2f}"
+            for plan in plans
+        ]
         await query.message.reply_text(
             (
                 "<b>Premium Plans</b>\n\n"
-                "Choose a plan to generate your Razorpay checkout link."
+                "Choose a plan to generate your Razorpay checkout link.\n\n"
+                + "\n".join(plan_lines)
             ),
             parse_mode=ParseMode.HTML,
-            reply_markup=premium_plan_keyboard(),
+            reply_markup=premium_plan_keyboard(plans),
         )
         return
 
@@ -89,17 +99,26 @@ async def subscribe_premium_handler(update: Update, context: ContextTypes.DEFAUL
             return
 
         plan_type = data.split("premium:plan:", 1)[1]
-        plan = SUBSCRIPTION_PLANS.get(plan_type)
-        if not plan:
+        try:
+            plan = payment_service.get_plan(plan_type)
+        except ValueError:
             await query.message.reply_text("Invalid premium plan selected.")
             return
 
         order = await payment_service.create_order(user["user_id"], plan_type)
+        updated_price_rupees = order["amount"] / 100
+        logger.info(
+            "premium_checkout_price_loaded | user_id=%s plan_type=%s amount_paise=%s amount_rupees=%.2f",
+            user["user_id"],
+            plan_type,
+            order["amount"],
+            updated_price_rupees,
+        )
         await query.message.reply_text(
             (
                 "<b>Premium Checkout</b>\n\n"
-                f"Plan: <b>{plan['name']}</b>\n"
-                f"Amount: <b>INR {plan['amount'] / 100:.2f}</b>\n\n"
+                f"<b>{plan['name']} Premium</b>\n"
+                f"Updated Price: <b>₹{updated_price_rupees:.2f}</b>\n\n"
                 "Tap the button below to open Razorpay checkout. Premium will activate only after payment verification succeeds."
             ),
             parse_mode=ParseMode.HTML,

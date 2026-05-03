@@ -54,16 +54,13 @@ def premium_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def premium_plan_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("💎 1 Week", callback_data="premium:plan:week_1")],
-            [InlineKeyboardButton("💎 1 Month", callback_data="premium:plan:month_1")],
-            [InlineKeyboardButton("💎 3 Months", callback_data="premium:plan:months_3")],
-            [InlineKeyboardButton("💎 1 Year", callback_data="premium:plan:year_1")],
-            [InlineKeyboardButton("⬅️ Back", callback_data="premium:view")],
-        ]
-    )
+def premium_plan_keyboard(plans: list[dict]) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(f"💎 {plan['name']}", callback_data=f"premium:plan:{plan['plan_type']}")]
+        for plan in plans
+    ]
+    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="premium:view")])
+    return InlineKeyboardMarkup(rows)
 
 
 def payment_link_keyboard(payment_url: str) -> InlineKeyboardMarkup:
