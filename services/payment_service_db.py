@@ -49,6 +49,11 @@ class PaymentService:
         return (start + timedelta(days=plan["days"])).replace(microsecond=0).isoformat()
 
     def ensure_premium_active_for_order(self, order_id: str, *, source: str | None = None) -> dict:
+        logger.info(
+            "premium_activation_attempt | order_id=%s source=%s",
+            order_id,
+            source,
+        )
         logger.info("premium activation start | order_id=%s source=%s", order_id, source)
         if source != PREMIUM_ACTIVATION_SOURCE_WEBHOOK:
             logger.warning(
