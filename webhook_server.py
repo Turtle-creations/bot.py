@@ -361,133 +361,162 @@ def payment_failed(
 
 @app.route("/payment/success", methods=["GET", "POST"])
 def payment_success():
-    form_data = {}
-    if request.method == "POST":
-        try:
-            form_data = request.form.to_dict()
-        except Exception:
-            form_data = {}
+    order_id = None
+    payment_id = None
+    try:
+        form_data = {}
+        if request.method == "POST":
+            try:
+                form_data = request.form.to_dict()
+            except Exception:
+                form_data = {}
 
-    query_data = request.args.to_dict()
-    logger.info(
-        "Payment callback params received | method=%s form_keys=%s query_keys=%s",
-        request.method,
-        sorted(form_data.keys()),
-        sorted(query_data.keys()),
-    )
-
-    raw_payment_id = form_data.get("razorpay_payment_id") or query_data.get("razorpay_payment_id")
-    raw_order_id = form_data.get("razorpay_order_id") or query_data.get("razorpay_order_id")
-    raw_signature = form_data.get("razorpay_signature") or query_data.get("razorpay_signature")
-
-    logger.info(
-        "Payment callback received | order_id=%s payment_id=%s method=%s",
-        raw_order_id,
-        raw_payment_id,
-        request.method,
-    )
-    if not raw_payment_id or not raw_order_id or not raw_signature:
-        final_order = payment_service.get_order(raw_order_id) if raw_order_id else None
+        query_data = request.args.to_dict()
         logger.info(
-            "Payment callback ignored | order_id=%s reason=missing_fields payment_id=%s signature_present=%s webhook_received=%s final_order_status=%s",
+            "Payment callback params received | method=%s form_keys=%s query_keys=%s",
+            request.method,
+            sorted(form_data.keys()),
+            sorted(query_data.keys()),
+        )
+
+        raw_payment_id = form_data.get("razorpay_payment_id") or query_data.get("razorpay_payment_id")
+        raw_order_id = form_data.get("razorpay_order_id") or query_data.get("razorpay_order_id")
+        raw_signature = form_data.get("razorpay_signature") or query_data.get("razorpay_signature")
+        order_id = raw_order_id
+        payment_id = raw_payment_id
+
+        logger.info(
+            "Payment callback received | order_id=%s payment_id=%s method=%s",
             raw_order_id,
             raw_payment_id,
-            bool(raw_signature),
-            bool(final_order and final_order.get("status") == "paid"),
-            final_order.get("status") if final_order else None,
+            request.method,
         )
-        _trace_payment_step(
-            "empty_callback_ignored",
-            order_id=raw_order_id,
-            payment_id=raw_payment_id or "missing",
-            final_status=final_order.get("status") if final_order else None,
-        )
-        return _render_status_page(
-            title="Payment Not Completed",
-            message="Payment incomplete",
-            detail="Waiting for valid Razorpay callback details. Empty callback was ignored.",
-            status_kind="failure",
-        )
+        if not raw_payment_id or not raw_order_id or not raw_signature:
+            final_order = payment_service.get_order(raw_order_id) if raw_order_id else None
+            logger.info(
+                "Payment callback ignored | order_id=%s reason=missing_fields payment_id=%s signature_present=%s webhook_received=%s final_order_status=%s",
+                raw_order_id,
+                raw_payment_id,
+                bool(raw_signature),
+                bool(final_order and final_order.get("status") == "paid"),
+                final_order.get("status") if final_order else None,
+            )
+            _trace_payment_step(
+                "empty_callback_ignored",
+                order_id=raw_order_id,
+                payment_id=raw_payment_id or "missing",
+                final_status=final_order.get("status") if final_order else None,
+            )
+            return _render_status_page(
+                title="Payment Not Completed",
+                message="Payment incomplete",
+                detail="Waiting for valid Razorpay callback details. Empty callback was ignored.",
+                status_kind="failure",
+            )
 
-    order_id = raw_order_id
-    payment_id = raw_payment_id
-    signature = raw_signature
-    logger.info(
-        "Valid payment callback locked | order_id=%s payment_id=%s method=%s",
-        order_id,
-        payment_id,
-        request.method,
-    )
-    _trace_payment_step(
-        "payment_success_callback_received",
-        order_id=order_id,
-        payment_id=payment_id,
-    )
-    logger.info(
-        "Payment callback payment id status | order_id=%s payment_id_received=%s",
-        order_id,
-        True,
-    )
-    _trace_payment_step(
-        "payment_id_check",
-        order_id=order_id,
-        payment_id=payment_id,
-    )
-
-    order = payment_service.get_order(order_id)
-    if not order:
-        logger.warning("Payment callback failed | order_id=%s reason=order_not_found", order_id)
-        return _render_status_page(
-            title="Payment Details Not Found",
-            message="Payment not completed or verification failed.",
-            detail="We could not match this callback to a saved order.",
-            status_kind="failure",
-        )
-
-    signature_ok = payment_service.verify_payment_signature(
-        order_id=order_id,
-        payment_id=payment_id,
-        signature=signature,
-    )
-    if not signature_ok:
-        payment_service.update_order_status(order_id, "callback_verification_failed")
-        final_order = payment_service.get_order(order_id)
-        logger.warning(
-            "Payment callback signature failed | order_id=%s payment_id=%s reason=signature_mismatch webhook_received=%s final_order_status=%s",
+        signature = raw_signature
+        logger.info(
+            "Valid payment callback locked | order_id=%s payment_id=%s method=%s",
             order_id,
             payment_id,
-            bool(final_order and final_order.get("status") == "paid"),
-            final_order.get("status") if final_order else None,
+            request.method,
         )
         _trace_payment_step(
-            "payment_signature_invalid",
+            "payment_success_callback_received",
             order_id=order_id,
             payment_id=payment_id,
-            final_status=final_order.get("status") if final_order else None,
         )
-        return _render_status_page(
-            title="Payment Verification Failed",
-            message="Payment incomplete",
-            detail="Razorpay returned callback details, but the signature did not verify. Premium has not been activated.",
-            status_kind="failure",
+        logger.info(
+            "Payment callback payment id status | order_id=%s payment_id_received=%s",
+            order_id,
+            True,
+        )
+        _trace_payment_step(
+            "payment_id_check",
+            order_id=order_id,
+            payment_id=payment_id,
         )
 
-    remote_payment = payment_service.fetch_razorpay_payment_sync(payment_id)
-    remote_order = payment_service.fetch_razorpay_order_sync(order_id)
-    remote_payment_status = (remote_payment or {}).get("status")
-    remote_order_status = (remote_order or {}).get("status")
-    _trace_payment_step(
-        "razorpay_backend_status",
-        order_id=order_id,
-        payment_id=payment_id,
-        payment_status=remote_payment_status or "missing",
-        order_status=remote_order_status or "missing",
-    )
-    if remote_payment_status != "captured":
-        payment_service.update_order_status(order_id, "callback_incomplete")
+        order = payment_service.get_order(order_id)
+        if not order:
+            logger.warning("Payment callback failed | order_id=%s reason=order_not_found", order_id)
+            return _render_status_page(
+                title="Payment Details Not Found",
+                message="Payment not completed or verification failed.",
+                detail="We could not match this callback to a saved order.",
+                status_kind="failure",
+            )
+
+        signature_ok = payment_service.verify_payment_signature(
+            order_id=order_id,
+            payment_id=payment_id,
+            signature=signature,
+        )
+        if not signature_ok:
+            payment_service.update_order_status(order_id, "callback_verification_failed")
+            final_order = payment_service.get_order(order_id)
+            logger.warning(
+                "Payment callback signature failed | order_id=%s payment_id=%s reason=signature_mismatch webhook_received=%s final_order_status=%s",
+                order_id,
+                payment_id,
+                bool(final_order and final_order.get("status") == "paid"),
+                final_order.get("status") if final_order else None,
+            )
+            _trace_payment_step(
+                "payment_signature_invalid",
+                order_id=order_id,
+                payment_id=payment_id,
+                final_status=final_order.get("status") if final_order else None,
+            )
+            return _render_status_page(
+                title="Payment Verification Failed",
+                message="Payment incomplete",
+                detail="Razorpay returned callback details, but the signature did not verify. Premium has not been activated.",
+                status_kind="failure",
+            )
+
+        remote_payment = payment_service.fetch_razorpay_payment_sync(payment_id)
+        remote_order = payment_service.fetch_razorpay_order_sync(order_id)
+        remote_payment_status = (remote_payment or {}).get("status")
+        remote_order_status = (remote_order or {}).get("status")
+        _trace_payment_step(
+            "razorpay_backend_status",
+            order_id=order_id,
+            payment_id=payment_id,
+            payment_status=remote_payment_status or "missing",
+            order_status=remote_order_status or "missing",
+        )
+        if remote_payment_status != "captured":
+            payment_service.update_order_status(order_id, "callback_incomplete")
+            final_order = payment_service.get_order(order_id)
+            logger.warning(
+                "Payment callback not captured | order_id=%s payment_id=%s remote_payment_status=%s remote_order_status=%s webhook_received=%s final_order_status=%s",
+                order_id,
+                payment_id,
+                remote_payment_status,
+                remote_order_status,
+                bool(final_order and final_order.get("status") == "paid"),
+                final_order.get("status") if final_order else None,
+            )
+            _trace_payment_step(
+                "webhook_not_received",
+                order_id=order_id,
+                payment_id=payment_id,
+                final_status=final_order.get("status") if final_order else None,
+            )
+            return _render_status_page(
+                title="Payment Not Completed",
+                message="Payment incomplete",
+                detail="Razorpay did not confirm a captured payment for this order. Premium has not been activated.",
+                status_kind="failure",
+            )
+
         final_order = payment_service.get_order(order_id)
-        logger.warning(
-            "Payment callback not captured | order_id=%s payment_id=%s remote_payment_status=%s remote_order_status=%s webhook_received=%s final_order_status=%s",
+        if final_order and final_order.get("status") not in {"paid", "already_processed"}:
+            payment_service.update_order_status(order_id, "callback_verified")
+            final_order = payment_service.get_order(order_id)
+        logger.info(
+            "Payment callback signature verified | order_id=%s payment_id=%s remote_payment_status=%s remote_order_status=%s webhook_received=%s final_order_status=%s",
             order_id,
             payment_id,
             remote_payment_status,
@@ -495,87 +524,93 @@ def payment_success():
             bool(final_order and final_order.get("status") == "paid"),
             final_order.get("status") if final_order else None,
         )
-        _trace_payment_step(
-            "webhook_not_received",
-            order_id=order_id,
-            payment_id=payment_id,
-            final_status=final_order.get("status") if final_order else None,
+        logger.info(
+            "Final valid callback status | order_id=%s payment_id=%s remote_payment_status=%s remote_order_status=%s final_order_status=%s",
+            order_id,
+            payment_id,
+            remote_payment_status,
+            remote_order_status,
+            final_order.get("status") if final_order else None,
         )
-        return _render_status_page(
-            title="Payment Not Completed",
-            message="Payment incomplete",
-            detail="Razorpay did not confirm a captured payment for this order. Premium has not been activated.",
-            status_kind="failure",
-        )
+        if final_order and final_order.get("status") in {"paid", "already_processed"}:
+            try:
+                activation_result = payment_service.ensure_premium_active_for_order(order_id)
+            except Exception:
+                logger.exception(
+                    "Payment success activation crashed | order_id=%s payment_id=%s final_order_status=%s",
+                    order_id,
+                    payment_id,
+                    final_order.get("status"),
+                )
+                return _render_status_page(
+                    title="Payment Received",
+                    message="Your payment was received.",
+                    detail="We are finalizing premium activation safely. Please return to the bot and use /premium_status in a moment.",
+                    status_kind="pending",
+                    action_url=_resolve_bot_link(),
+                    action_label="Return to Bot",
+                )
 
-    final_order = payment_service.get_order(order_id)
-    if final_order and final_order.get("status") not in {"paid", "already_processed"}:
-        payment_service.update_order_status(order_id, "callback_verified")
-        final_order = payment_service.get_order(order_id)
-    logger.info(
-        "Payment callback signature verified | order_id=%s payment_id=%s remote_payment_status=%s remote_order_status=%s webhook_received=%s final_order_status=%s",
-        order_id,
-        payment_id,
-        remote_payment_status,
-        remote_order_status,
-        bool(final_order and final_order.get("status") == "paid"),
-        final_order.get("status") if final_order else None,
-    )
-    logger.info(
-        "Final valid callback status | order_id=%s payment_id=%s remote_payment_status=%s remote_order_status=%s final_order_status=%s",
-        order_id,
-        payment_id,
-        remote_payment_status,
-        remote_order_status,
-        final_order.get("status") if final_order else None,
-    )
-    if final_order and final_order.get("status") in {"paid", "already_processed"}:
-        activation_result = payment_service.ensure_premium_active_for_order(order_id)
-        if not activation_result.get("ok"):
-            logger.warning(
-                "Payment success could not confirm premium activation | order_id=%s final_order_status=%s reason=%s",
+            if not activation_result.get("ok"):
+                logger.warning(
+                    "Payment success could not confirm premium activation | order_id=%s final_order_status=%s reason=%s",
+                    order_id,
+                    final_order.get("status"),
+                    activation_result.get("reason"),
+                )
+                return _render_status_page(
+                    title="Payment Received",
+                    message="Your payment was received.",
+                    detail="We are finalizing premium activation. Please return to the bot and use /premium_status in a moment.",
+                    status_kind="pending",
+                    action_url=_resolve_bot_link(),
+                    action_label="Return to Bot",
+                )
+            logger.info(
+                "redirecting_to_bot | order_id=%s final_order_status=%s activation_result=%s",
                 order_id,
                 final_order.get("status"),
                 activation_result.get("reason"),
             )
             return _render_status_page(
-                title="Payment Received",
-                message="Your payment was received.",
-                detail="We are finalizing premium activation. Please return to the bot and use /premium_status in a moment.",
-                status_kind="pending",
+                title="Payment Successful",
+                message="Your premium payment was verified successfully.",
+                detail="Premium has been activated on your account. You can return to the bot and use /premium_status to confirm it is active.",
+                status_kind="success",
                 action_url=_resolve_bot_link(),
                 action_label="Return to Bot",
+                auto_redirect_url=_resolve_bot_link(),
+                auto_redirect_delay_ms=3000,
             )
-        logger.info(
-            "redirecting_to_bot | order_id=%s final_order_status=%s activation_result=%s",
+
+        if not (final_order and final_order.get("status") == "paid"):
+            _trace_payment_step(
+                "webhook_not_received",
+                order_id=order_id,
+                payment_id=payment_id,
+                final_status=final_order.get("status") if final_order else None,
+            )
+        return _render_status_page(
+            title="Payment Verification Received",
+            message="Your payment details were received and the payment is captured.",
+            detail="Premium will be activated only after Razorpay sends a valid payment.captured webhook confirmation.",
+            status_kind="pending",
+        )
+    except Exception:
+        logger.exception(
+            "Payment success route failed | order_id=%s payment_id=%s method=%s",
             order_id,
-            final_order.get("status"),
-            activation_result.get("reason"),
+            payment_id,
+            request.method,
         )
         return _render_status_page(
-            title="Payment Successful",
-            message="Your premium payment was verified successfully.",
-            detail="Premium has been activated on your account. You can return to the bot and use /premium_status to confirm it is active.",
-            status_kind="success",
+            title="Payment Received",
+            message="Your payment is being verified.",
+            detail="We hit a temporary issue while finalizing this payment. Please return to the bot and use /premium_status shortly.",
+            status_kind="pending",
             action_url=_resolve_bot_link(),
             action_label="Return to Bot",
-            auto_redirect_url=_resolve_bot_link(),
-            auto_redirect_delay_ms=3000,
         )
-
-    if not (final_order and final_order.get("status") == "paid"):
-        _trace_payment_step(
-            "webhook_not_received",
-            order_id=order_id,
-            payment_id=payment_id,
-            final_status=final_order.get("status") if final_order else None,
-        )
-    return _render_status_page(
-        title="Payment Verification Received",
-        message="Your payment details were received and the payment is captured.",
-        detail="Premium will be activated only after Razorpay sends a valid payment.captured webhook confirmation.",
-        status_kind="pending",
-    )
 
 
 @app.route("/webhook", methods=["POST"])
