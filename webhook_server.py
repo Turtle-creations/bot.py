@@ -2,6 +2,7 @@ import html
 import hashlib
 import json
 import os
+import time
 from queue import Empty, Full, Queue
 from threading import Thread
 
@@ -51,6 +52,7 @@ def _resolve_bot_link() -> str:
 def _telegram_worker():
     while True:
         try:
+            logger.info("Telegram worker waiting | queue_size=%s", _TELEGRAM_QUEUE.qsize())
             item = _TELEGRAM_QUEUE.get(timeout=1)
         except Empty:
             continue
@@ -60,11 +62,21 @@ def _telegram_worker():
             if not token:
                 continue
 
+            logger.info(
+                "Telegram sendMessage start | chat_id=%s queue_size_before_send=%s",
+                item.get("chat_id"),
+                _TELEGRAM_QUEUE.qsize(),
+            )
             with httpx.Client(timeout=10) as client:
                 client.post(
                     f"https://api.telegram.org/bot{token}/sendMessage",
                     json={"chat_id": item["chat_id"], "text": item["text"]},
                 )
+            logger.info(
+                "Telegram sendMessage end | chat_id=%s queue_size_after_send=%s",
+                item.get("chat_id"),
+                _TELEGRAM_QUEUE.qsize(),
+            )
         except Exception as exc:
             logger.warning(
                 "Telegram background send failed | chat_id=%s reason=%s",
@@ -84,7 +96,9 @@ def _enqueue_telegram_message(chat_id: int, text: str):
         logger.warning("Telegram send skipped | chat_id=%s reason=missing_bot_token", chat_id)
         return
     try:
+        logger.info("Telegram enqueue start | chat_id=%s queue_size_before=%s", chat_id, _TELEGRAM_QUEUE.qsize())
         _TELEGRAM_QUEUE.put_nowait({"chat_id": int(chat_id), "text": text})
+        logger.info("Telegram enqueue end | chat_id=%s queue_size_after=%s", chat_id, _TELEGRAM_QUEUE.qsize())
     except Full:
         logger.warning("Telegram queue full | chat_id=%s max_size=%s", chat_id, _TELEGRAM_QUEUE_MAX_SIZE)
 
@@ -363,6 +377,9 @@ def payment_failed(
 def payment_success():
     order_id = None
     payment_id = None
+    route_started_at = time.monotonic()
+    route_outcome = "unknown"
+    logger.info("payment_success start | method=%s path=%s", request.method, request.path)
     try:
         form_data = {}
         if request.method == "POST":
@@ -407,6 +424,7 @@ def payment_success():
                 payment_id=raw_payment_id or "missing",
                 final_status=final_order.get("status") if final_order else None,
             )
+            route_outcome = "missing_fields"
             return _render_status_page(
                 title="Payment Not Completed",
                 message="Payment incomplete",
@@ -440,6 +458,7 @@ def payment_success():
         order = payment_service.get_order(order_id)
         if not order:
             logger.warning("Payment callback failed | order_id=%s reason=order_not_found", order_id)
+            route_outcome = "order_not_found"
             return _render_status_page(
                 title="Payment Details Not Found",
                 message="Payment not completed or verification failed.",
@@ -468,6 +487,7 @@ def payment_success():
                 payment_id=payment_id,
                 final_status=final_order.get("status") if final_order else None,
             )
+            route_outcome = "invalid_signature"
             return _render_status_page(
                 title="Payment Verification Failed",
                 message="Payment incomplete",
@@ -504,6 +524,7 @@ def payment_success():
                 payment_id=payment_id,
                 final_status=final_order.get("status") if final_order else None,
             )
+            route_outcome = "payment_not_captured"
             return _render_status_page(
                 title="Payment Not Completed",
                 message="Payment incomplete",
@@ -534,7 +555,20 @@ def payment_success():
         )
         if final_order and final_order.get("status") in {"paid", "already_processed"}:
             try:
+                logger.info(
+                    "premium activation start | source=payment_success order_id=%s payment_id=%s final_order_status=%s",
+                    order_id,
+                    payment_id,
+                    final_order.get("status"),
+                )
                 activation_result = payment_service.ensure_premium_active_for_order(order_id)
+                logger.info(
+                    "premium activation end | source=payment_success order_id=%s payment_id=%s ok=%s reason=%s",
+                    order_id,
+                    payment_id,
+                    activation_result.get("ok"),
+                    activation_result.get("reason"),
+                )
             except Exception:
                 logger.exception(
                     "Payment success activation crashed | order_id=%s payment_id=%s final_order_status=%s",
@@ -542,6 +576,7 @@ def payment_success():
                     payment_id,
                     final_order.get("status"),
                 )
+                route_outcome = "activation_exception"
                 return _render_status_page(
                     title="Payment Received",
                     message="Your payment was received.",
@@ -558,6 +593,7 @@ def payment_success():
                     final_order.get("status"),
                     activation_result.get("reason"),
                 )
+                route_outcome = "activation_pending"
                 return _render_status_page(
                     title="Payment Received",
                     message="Your payment was received.",
@@ -572,6 +608,7 @@ def payment_success():
                 final_order.get("status"),
                 activation_result.get("reason"),
             )
+            route_outcome = "success"
             return _render_status_page(
                 title="Payment Successful",
                 message="Your premium payment was verified successfully.",
@@ -590,6 +627,7 @@ def payment_success():
                 payment_id=payment_id,
                 final_status=final_order.get("status") if final_order else None,
             )
+        route_outcome = "waiting_for_webhook"
         return _render_status_page(
             title="Payment Verification Received",
             message="Your payment details were received and the payment is captured.",
@@ -603,6 +641,7 @@ def payment_success():
             payment_id,
             request.method,
         )
+        route_outcome = "exception"
         return _render_status_page(
             title="Payment Received",
             message="Your payment is being verified.",
@@ -611,13 +650,35 @@ def payment_success():
             action_url=_resolve_bot_link(),
             action_label="Return to Bot",
         )
+    finally:
+        logger.info(
+            "payment_success end | order_id=%s payment_id=%s outcome=%s duration_ms=%s",
+            order_id,
+            payment_id,
+            route_outcome,
+            int((time.monotonic() - route_started_at) * 1000),
+        )
 
 
 @app.route("/webhook", methods=["POST"])
 @app.route("/webhook/razorpay", methods=["POST"])
 def razorpay_webhook():
+    route_started_at = time.monotonic()
+    route_outcome = "unknown"
     x_razorpay_signature = request.headers.get("X-Razorpay-Signature")
     x_razorpay_event_id = request.headers.get("X-Razorpay-Event-Id")
+    logger.info("webhook start | path=%s method=%s event_id=%s", request.path, request.method, x_razorpay_event_id)
+    def _log_webhook_end():
+        logger.info(
+            "webhook end | path=%s method=%s event_id=%s outcome=%s duration_ms=%s queue_size=%s",
+            request.path,
+            request.method,
+            x_razorpay_event_id,
+            route_outcome,
+            int((time.monotonic() - route_started_at) * 1000),
+            _TELEGRAM_QUEUE.qsize(),
+        )
+
     raw_body = request.get_data()
     headers_dict = dict(request.headers)
     body_text = raw_body.decode("utf-8", errors="replace")
@@ -654,6 +715,8 @@ def razorpay_webhook():
             payment_id=preview_payment_id,
             final_status=preview_final_order.get("status") if preview_final_order else None,
         )
+        route_outcome = "missing_signature"
+        _log_webhook_end()
         return jsonify({"detail": "Missing Razorpay signature"}), 400
 
     signature_ok = payment_service.verify_webhook_signature(raw_body, x_razorpay_signature)
@@ -671,6 +734,8 @@ def razorpay_webhook():
             payment_id=preview_payment_id,
             final_status=preview_final_order.get("status") if preview_final_order else None,
         )
+        route_outcome = "invalid_signature"
+        _log_webhook_end()
         return jsonify({"detail": "Invalid webhook signature"}), 401
 
     logger.info(
@@ -687,12 +752,16 @@ def razorpay_webhook():
             payload = json.loads(raw_body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
             logger.warning("Webhook rejected | event_id=%s reason=invalid_json", x_razorpay_event_id)
+            route_outcome = "invalid_json"
+            _log_webhook_end()
             return jsonify({"detail": "Invalid webhook payload"}), 400
 
     event_name = payload.get("event")
     logger.info("Webhook event type | event_id=%s event=%s", x_razorpay_event_id, event_name)
     if event_name != "payment.captured":
         logger.info("Webhook ignored | event_id=%s event=%s", x_razorpay_event_id, event_name)
+        route_outcome = "ignored"
+        _log_webhook_end()
         return jsonify({"status": "ignored", "reason": "unsupported_event"})
 
     derived_event_id = (
@@ -713,6 +782,8 @@ def razorpay_webhook():
             payload.get("payload", {}).get("payment", {}).get("entity", {}).get("order_id"),
             duplicate_status.get("reason"),
         )
+        route_outcome = "already_processed"
+        _log_webhook_end()
         return jsonify({"status": "already_processed", "reason": duplicate_status.get("reason")}), 200
 
     _trace_payment_step(
@@ -731,9 +802,13 @@ def razorpay_webhook():
         result = payment_service.process_captured_payment(derived_event_id, payload)
     except ValueError as exc:
         logger.warning("Webhook processing failed | event_id=%s reason=%s", derived_event_id, exc)
+        route_outcome = "validation_error"
+        _log_webhook_end()
         return jsonify({"detail": str(exc)}), 400
     except Exception as exc:
         logger.exception("Webhook processing crashed | event_id=%s", derived_event_id)
+        route_outcome = "exception"
+        _log_webhook_end()
         return jsonify({"detail": f"Webhook processing failed: {exc}"}), 500
 
     if result.get("status") in {"processed", "already_processed"}:
@@ -775,4 +850,6 @@ def razorpay_webhook():
             final_status=result.get("status"),
         )
 
+    route_outcome = result.get("status") or "completed"
+    _log_webhook_end()
     return jsonify(result)

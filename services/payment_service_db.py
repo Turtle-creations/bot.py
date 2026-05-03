@@ -47,10 +47,20 @@ class PaymentService:
         return (start + timedelta(days=plan["days"])).replace(microsecond=0).isoformat()
 
     def ensure_premium_active_for_order(self, order_id: str) -> dict:
+        logger.info("premium activation start | order_id=%s source=ensure_premium_active_for_order", order_id)
         order = self.get_order(order_id)
         if not order:
+            logger.info("premium activation end | order_id=%s ok=%s reason=%s", order_id, False, "order_not_found")
             return {"ok": False, "reason": "order_not_found"}
-        return self.ensure_premium_active_for_order_data(order)
+        result = self.ensure_premium_active_for_order_data(order)
+        logger.info(
+            "premium activation end | order_id=%s ok=%s reason=%s activated_now=%s",
+            order_id,
+            result.get("ok"),
+            result.get("reason"),
+            result.get("activated_now"),
+        )
+        return result
 
     def ensure_premium_active_for_order_data(self, order_data: dict) -> dict:
         plan_type = order_data.get("plan_type")

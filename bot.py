@@ -2,10 +2,12 @@ import os
 import time
 from threading import Thread
 
+from telegram import Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
     CommandHandler,
+    ContextTypes,
     Defaults,
     MessageHandler,
     filters,
@@ -36,7 +38,44 @@ INDIA_TZ = ZoneInfo("Asia/Kolkata")
 
 
 async def error_handler(update, context):
-    logger.exception("Unhandled error while processing update", exc_info=context.error)
+    logger.exception(
+        "Unhandled error while processing update | update_id=%s update_type=%s effective_user_id=%s effective_chat_id=%s error=%r",
+        getattr(update, "update_id", None),
+        type(update).__name__ if update is not None else None,
+        getattr(getattr(update, "effective_user", None), "id", None),
+        getattr(getattr(update, "effective_chat", None), "id", None),
+        context.error,
+        exc_info=context.error,
+    )
+
+
+async def _log_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not query:
+        return
+
+    logger.info(
+        "Callback query received | update_id=%s user_id=%s chat_id=%s data=%s inline_message_id=%s",
+        update.update_id,
+        getattr(query.from_user, "id", None),
+        getattr(getattr(query.message, "chat", None), "id", None),
+        query.data,
+        query.inline_message_id,
+    )
+
+
+async def _log_command_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.effective_message
+    if not message or not message.text:
+        return
+
+    logger.info(
+        "Command received | update_id=%s user_id=%s chat_id=%s text=%s",
+        update.update_id,
+        getattr(update.effective_user, "id", None),
+        getattr(update.effective_chat, "id", None),
+        message.text,
+    )
 
 
 def _resolve_bot_token() -> str:
@@ -60,6 +99,7 @@ def _start_keep_alive_server():
 
 def build_application() -> Application:
     setup_logging()
+    logger.info("Bot build start")
     database.initialize()
     bootstrap_application()
 
@@ -71,6 +111,8 @@ def build_application() -> Application:
     )
 
     application.add_error_handler(error_handler)
+    application.add_handler(CallbackQueryHandler(_log_callback_query), group=-1)
+    application.add_handler(MessageHandler(filters.COMMAND, _log_command_update), group=-1)
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("quiz", quiz_command))
     application.add_handler(CommandHandler("admin", admin_command))
@@ -88,15 +130,19 @@ def build_application() -> Application:
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, support_text_router), group=1)
 
     notification_service.register_jobs(application)
+    logger.info("Bot build complete | handlers_registered=1 notification_jobs_ready=1")
     return application
 
 
 def main():
+    logger.info("Bot main start")
     flask_thread = _start_keep_alive_server()
     try:
         application = build_application()
-        logger.info("Quiz bot is starting")
+        logger.info("Quiz bot is starting | polling_about_to_start=1")
+        logger.info("Calling application.run_polling()")
         application.run_polling(drop_pending_updates=True)
+        logger.info("application.run_polling() returned normally")
     except Exception:
         logger.exception("Bot startup/polling failed; keeping Flask server alive for Render")
         while flask_thread.is_alive():
