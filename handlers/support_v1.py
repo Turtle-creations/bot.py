@@ -62,7 +62,7 @@ async def support_text_router(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
     if user_service.is_admin(user["user_id"]):
-        if user["user_id"] != support_service.get_support_admin_id():
+        if user["user_id"] not in support_service.get_support_admin_ids():
             return
         if context.user_data.get("admin_mode") or context.user_data.get("question_wizard"):
             return
@@ -75,6 +75,10 @@ async def support_text_router(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
 
         ticket = support_service.get_ticket_by_admin_message(message.chat_id, reply_to.message_id)
+        if not ticket:
+            ticket_id = support_service.extract_ticket_id_from_text(reply_to.text or reply_to.caption)
+            if ticket_id:
+                ticket = support_service.get_ticket_by_id(ticket_id)
         if not ticket:
             return
 
@@ -104,8 +108,14 @@ async def support_text_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     support_id = support_service.create_ticket(user, text)
-    admin_chat_id = support_service.get_support_admin_id()
+    admin_chat_ids = support_service.get_support_admin_ids()
     timestamp = now_iso()
+    logger.info(
+        "support_message_received | support_id=%s user_id=%s admin_targets=%s",
+        support_id,
+        user["user_id"],
+        len(admin_chat_ids),
+    )
     admin_text = (
         "<b>New Customer Support Message</b>\n\n"
         f"<b>Ticket ID:</b> {support_id}\n"
@@ -117,24 +127,36 @@ async def support_text_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         "Reply to this message to answer the user through the bot."
     )
 
-    if admin_chat_id:
-        admin_message = await context.bot.send_message(
-            chat_id=admin_chat_id,
-            text=admin_text,
-            parse_mode=ParseMode.HTML,
-        )
-        support_service.attach_admin_message(support_id, admin_chat_id, admin_message.message_id)
-        logger.info(
-            "Support ticket forwarded | support_id=%s user_id=%s admin_chat_id=%s",
-            support_id,
-            user["user_id"],
-            admin_chat_id,
-        )
-    else:
+    first_forwarded = False
+    for admin_chat_id in admin_chat_ids:
+        try:
+            admin_message = await context.bot.send_message(
+                chat_id=admin_chat_id,
+                text=admin_text,
+                parse_mode=ParseMode.HTML,
+            )
+            if not first_forwarded:
+                support_service.attach_admin_message(support_id, admin_chat_id, admin_message.message_id)
+                first_forwarded = True
+            logger.info(
+                "support_message_forwarded_to_admin | support_id=%s user_id=%s admin_chat_id=%s",
+                support_id,
+                user["user_id"],
+                admin_chat_id,
+            )
+        except Exception:
+            logger.exception(
+                "support_message_forward_failed | support_id=%s user_id=%s admin_chat_id=%s",
+                support_id,
+                user["user_id"],
+                admin_chat_id,
+            )
+
+    if not admin_chat_ids:
         logger.warning("Support ticket not forwarded | support_id=%s reason=no_admin_configured", support_id)
 
     _set_support_mode(context, False)
     await message.reply_text(
-        "Your message has been sent to support.",
+        "✅ Your message has been sent to support.",
         reply_markup=back_to_main_keyboard(),
     )

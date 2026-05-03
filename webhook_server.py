@@ -54,6 +54,11 @@ def _resolve_bot_link() -> str:
     return f"https://t.me/{bot_username}" if bot_username else ""
 
 
+def _resolve_bot_deep_link(start_param: str = "payment_success") -> str:
+    bot_username = _resolve_bot_username()
+    return f"https://t.me/{bot_username}?start={start_param}" if bot_username else ""
+
+
 _LAST_TELEGRAM_WORKER_IDLE_LOG = 0.0
 
 
@@ -144,6 +149,8 @@ def _render_status_page(
     status_kind: str,
     action_url: str | None = None,
     action_label: str | None = None,
+    fallback_url: str | None = None,
+    fallback_label: str | None = None,
     auto_redirect_url: str | None = None,
     auto_redirect_delay_ms: int | None = None,
 ) -> str:
@@ -172,6 +179,7 @@ def _render_status_page(
             <p style="color: #4b5563; line-height: 1.6;">{html.escape(detail)}</p>
             {f'<p style="color: #6b7280;">Redirecting in {max(1, int((auto_redirect_delay_ms or 3000) / 1000))} seconds...</p>' if auto_redirect_url and auto_redirect_delay_ms else ""}
             {f'<p style="margin-top: 20px;"><a href="{html.escape(action_url or "")}" style="display: inline-block; background: {accent}; color: white; text-decoration: none; padding: 12px 18px; border-radius: 10px; font-weight: 700;">{html.escape(action_label or "Open")}</a></p>' if action_url and action_label else ""}
+            {f'<p style="margin-top: 12px;"><a href="{html.escape(fallback_url or "")}" style="color: {accent}; text-decoration: underline; font-weight: 600;">{html.escape(fallback_label or "Open in Telegram")}</a></p>' if fallback_url and fallback_label else ""}
           </div>
           {f'<script>setTimeout(function () {{ window.location.href = {json.dumps(auto_redirect_url)}; }}, {int(auto_redirect_delay_ms or 3000)});</script>' if auto_redirect_url and auto_redirect_delay_ms else ""}
         </body>
@@ -688,10 +696,13 @@ def payment_success():
                     action_label="Return to Bot" if _resolve_bot_link() else None,
                 )
             logger.info(
-                "redirecting_to_bot | order_id=%s final_order_status=%s activation_result=%s",
+                "redirecting_to_bot | order_id=%s payment_id=%s final_order_status=%s activation_result=%s redirect_url=%s fallback_url=%s",
                 order_id,
+                payment_id,
                 final_order.get("status"),
                 activation_result.get("reason"),
+                _resolve_bot_link(),
+                _resolve_bot_deep_link(),
             )
             route_outcome = "success"
             return _render_status_page(
@@ -699,8 +710,10 @@ def payment_success():
                 message="Your premium payment was verified successfully.",
                 detail="Premium has been activated on your account. You can return to the bot and use /premium_status to confirm it is active.",
                 status_kind="success",
-                action_url=_resolve_bot_link() or None,
-                action_label="Return to Bot" if _resolve_bot_link() else None,
+                action_url=_resolve_bot_deep_link() or _resolve_bot_link() or None,
+                action_label="Return to Bot" if (_resolve_bot_deep_link() or _resolve_bot_link()) else None,
+                fallback_url=_resolve_bot_deep_link() or None,
+                fallback_label="Open in Telegram" if _resolve_bot_deep_link() else None,
                 auto_redirect_url=_resolve_bot_link() or None,
                 auto_redirect_delay_ms=3000 if _resolve_bot_link() else None,
             )

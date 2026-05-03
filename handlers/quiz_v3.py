@@ -468,12 +468,7 @@ async def _advance_to_next_question(context: ContextTypes.DEFAULT_TYPE, user_id:
 
 async def _send_summary(message, summary: dict):
     await message.reply_text(
-        (
-            "<b>🏁 Quiz finished</b>\n\n"
-            f"<b>✅ Correct:</b> {summary['correct']}\n"
-            f"<b>❌ Wrong:</b> {summary['wrong']}\n"
-            f"<b>⏭ Skipped:</b> {summary['skipped']}"
-        ),
+        _summary_text("🏁 Quiz finished", summary),
         parse_mode=ParseMode.HTML,
     )
 
@@ -481,12 +476,7 @@ async def _send_summary(message, summary: dict):
 async def _send_summary_by_chat(context: ContextTypes.DEFAULT_TYPE, chat_id: int, summary: dict):
     await context.bot.send_message(
         chat_id=chat_id,
-        text=(
-            "<b>🏁 Quiz finished</b>\n\n"
-            f"<b>✅ Correct:</b> {summary['correct']}\n"
-            f"<b>❌ Wrong:</b> {summary['wrong']}\n"
-            f"<b>⏭ Skipped:</b> {summary['skipped']}"
-        ),
+        text=_summary_text("🏁 Quiz finished", summary),
         parse_mode=ParseMode.HTML,
     )
 
@@ -499,12 +489,7 @@ async def _send_summary_to_chat(
 ):
     await context.bot.send_message(
         chat_id=chat_id,
-        text=(
-            f"<b>{title}</b>\n\n"
-            f"<b>✅ Correct:</b> {summary['correct']}\n"
-            f"<b>❌ Wrong:</b> {summary['wrong']}\n"
-            f"<b>⏭ Skipped:</b> {summary['skipped']}"
-        ),
+        text=_summary_text(title, summary),
         parse_mode=ParseMode.HTML,
     )
 
@@ -524,4 +509,15 @@ def _completion_feedback_text(feedback: str, correct_answer: str) -> str:
     return (
         f"{feedback}\n"
         f"<b>Correct answer:</b> {html.escape(correct_answer)}"
+    )
+
+
+def _summary_text(title: str, summary: dict) -> str:
+    return (
+        f"<b>{title}</b>\n\n"
+        f"<b>Score:</b> {summary['score']:.2f}\n"
+        f"<b>Accuracy:</b> {summary['accuracy']:.2f}%\n"
+        f"<b>✅ Correct answers:</b> {summary['correct']}\n"
+        f"<b>❌ Wrong answers:</b> {summary['wrong']}\n"
+        f"<b>Negative marking applied:</b> -{summary['negative_marking']:.2f}"
     )

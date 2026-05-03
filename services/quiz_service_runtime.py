@@ -18,6 +18,8 @@ logger = get_logger(__name__)
 
 class QuizService:
     MAX_PAUSES = 4
+    QUIZ_COUNT_OPTIONS = (20, 50, 100)
+    MAX_QUESTIONS_PER_QUIZ = 100
 
     def __init__(self):
         self.sessions: dict[int, dict] = {}
@@ -25,11 +27,7 @@ class QuizService:
     def get_available_question_counts(self, user: dict, total_questions: int) -> list[int]:
         if total_questions <= 0:
             return []
-
-        counts = [count for count in (5, 10, 20) if count <= total_questions]
-        if total_questions not in counts:
-            counts.append(total_questions)
-        return sorted(set(counts))
+        return list(self.QUIZ_COUNT_OPTIONS)
 
     def can_start_quiz(self, user: dict) -> tuple[bool, str]:
         return True, ""
@@ -55,7 +53,9 @@ class QuizService:
         if not available_counts:
             return None
 
-        count = min(requested_count, max(available_counts))
+        count = min(requested_count, len(questions), self.MAX_QUESTIONS_PER_QUIZ)
+        if count <= 0:
+            return None
         random.shuffle(questions)
         questions = questions[:count]
 
@@ -375,13 +375,36 @@ class QuizService:
     def build_summary(self, user_id: int) -> dict:
         session = self.sessions.get(user_id)
         if not session:
-            return {"correct": 0, "wrong": 0, "skipped": 0, "set_id": None, "requested_count": 0}
+            return self._summary_payload(0, 0, 0, None, 0)
+        return self._summary_payload(
+            session["correct_count"],
+            session["wrong_count"],
+            session["skipped_count"],
+            session["set_id"],
+            session["requested_count"],
+        )
+
+    def _summary_payload(
+        self,
+        correct: int,
+        wrong: int,
+        skipped: int,
+        set_id: int | None,
+        requested_count: int,
+    ) -> dict:
+        attempted = correct + wrong
+        score = correct - (wrong * 0.25)
+        accuracy = (correct / attempted * 100) if attempted else 0.0
         return {
-            "correct": session["correct_count"],
-            "wrong": session["wrong_count"],
-            "skipped": session["skipped_count"],
-            "set_id": session["set_id"],
-            "requested_count": session["requested_count"],
+            "correct": correct,
+            "wrong": wrong,
+            "skipped": skipped,
+            "attempted": attempted,
+            "score": score,
+            "accuracy": accuracy,
+            "negative_marking": wrong * 0.25,
+            "set_id": set_id,
+            "requested_count": requested_count,
         }
 
     def _cancel_background_jobs(self, user_id: int):
