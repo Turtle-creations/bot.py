@@ -17,8 +17,8 @@
             <p><strong>Status:</strong> {{ order.status }}</p>
             {% endif %}
             <div class="hero-actions">
-                <a class="button button-primary" href="https://t.me/QuizPathshala_bot" target="_blank" rel="noopener">Buy Premium</a>
-                <a class="button button-secondary" href="https://t.me/QuizPathshala_bot" target="_blank" rel="noopener">Open Telegram Bot</a>
+                <a class="button button-primary" href="{{ url_for('premium.premium_page') }}">Back to Premium</a>
+                <a class="button button-secondary" href="{{ bot_url }}" target="_blank" rel="noopener">Telegram Companion</a>
             </div>
         </div>
     </div>

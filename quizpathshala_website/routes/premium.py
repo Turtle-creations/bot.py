@@ -5,6 +5,7 @@ from flask import Blueprint, flash, jsonify, redirect, render_template, request,
 
 from config import BOT_URL, PUBLIC_BASE_URL, RAZORPAY_KEY_ID
 from services.payment_service_db import payment_service
+from services.site_content import PREMIUM_BENEFITS
 from services.web_identity_service import web_identity_service
 from services.web_payment_service import web_payment_service
 
@@ -32,6 +33,7 @@ def premium_page():
         payment_ready=not payment_service.get_missing_configuration(),
         missing_payment_config=payment_service.get_missing_configuration(),
         premium_status=payment_service.premium_status_text(user),
+        premium_benefits=PREMIUM_BENEFITS,
         bot_url=BOT_URL,
         admin_authenticated=web_identity_service.is_admin_authenticated(),
     )

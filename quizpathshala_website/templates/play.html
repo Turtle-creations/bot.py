@@ -19,12 +19,64 @@
             {% if question.image_path %}
             <img class="question-image" src="{{ url_for(media_route_name, relative_path=question.image_path) }}" alt="Question illustration">
             {% endif %}
-            <p>Quiz interactions are temporarily being handled through the official Telegram bot.</p>
-            <div class="hero-actions">
-                <a class="button button-primary" href="https://t.me/QuizPathshala_bot" target="_blank" rel="noopener">Start Quiz</a>
-                <a class="button button-secondary" href="https://t.me/QuizPathshala_bot" target="_blank" rel="noopener">Help on Telegram</a>
+
+            {% if not active_result %}
+            <form method="post" id="quiz-form">
+                <input type="hidden" name="action" value="answer" id="quiz-action">
+                <div class="option-list">
+                    {% for option in question.options %}
+                    <label class="option-item">
+                        <input type="radio" name="selected_option" value="{{ loop.index0 }}">
+                        <span>{{ option.text }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+                <div class="hero-actions">
+                    <button class="button button-primary" type="submit">Submit Answer</button>
+                    <button class="button button-secondary" type="submit" onclick="document.getElementById('quiz-action').value='skip'">Skip</button>
+                    <button class="button button-secondary" type="submit" onclick="document.getElementById('quiz-action').value='submit'">Submit Quiz</button>
+                </div>
+            </form>
+            {% else %}
+            <div class="result-badge {% if active_result.correct %}result-good{% else %}result-bad{% endif %}">
+                {% if active_result.action == "skip" %}
+                Question skipped
+                {% elif active_result.action == "timeout" %}
+                Time is up for this question
+                {% elif active_result.correct %}
+                Correct answer
+                {% else %}
+                Wrong answer
+                {% endif %}
             </div>
+            <p><strong>Correct answer:</strong> {{ active_result.correct_answer }}</p>
+            {% if active_result.explanation %}
+            <p>{{ active_result.explanation }}</p>
+            {% endif %}
+            <form method="post">
+                <input type="hidden" name="action" value="next">
+                <button class="button button-primary" type="submit">Next Question</button>
+            </form>
+            {% endif %}
         </article>
     </div>
 </section>
+
+{% if not active_result %}
+<script>
+const timerNode = document.getElementById("timer-value");
+const formNode = document.getElementById("quiz-form");
+const actionNode = document.getElementById("quiz-action");
+let remaining = Number(timerNode.textContent || "0");
+const timer = setInterval(() => {
+    remaining -= 1;
+    timerNode.textContent = Math.max(remaining, 0);
+    if (remaining <= 0) {
+        clearInterval(timer);
+        actionNode.value = "timeout";
+        formNode.submit();
+    }
+}, 1000);
+</script>
+{% endif %}
 {% endblock %}

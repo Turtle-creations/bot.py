@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ page_title }} | QuizPathshala</title>
-    <meta name="description" content="QuizPathshala is a web-based quiz practice platform with premium access, Razorpay payments, and admin controls.">
+    <meta name="description" content="QuizPathshala is an online quiz preparation platform with secure premium plans, Razorpay payments, and companion Telegram support.">
     {% if canonical_url %}
     <link rel="canonical" href="{{ canonical_url }}{{ request.path }}">
     {% endif %}
@@ -16,8 +16,9 @@
             <a class="brand" href="{{ url_for('pages.home') }}">QuizPathshala</a>
             <nav class="site-nav">
                 <a href="{{ url_for('pages.home') }}">Home</a>
-                <a href="{{ url_for('quiz.quiz_start') }}">Quiz</a>
-                <a href="{{ url_for('premium.premium_page') }}">Premium</a>
+                <a href="{{ url_for('pages.about') }}">About</a>
+                <a href="{{ url_for('quiz.quiz_start') }}">Quiz Demo</a>
+                <a href="{{ url_for('premium.premium_page') }}">Pricing</a>
                 <a href="{{ url_for('pages.contact') }}">Contact</a>
                 <a href="{{ url_for('pages.privacy') }}">Privacy</a>
                 <a href="{{ url_for('pages.terms') }}">Terms</a>
@@ -44,17 +45,17 @@
         <div class="container footer-grid">
             <div>
                 <h3>QuizPathshala</h3>
-                <p>Practice quizzes on the web, unlock premium-only sets, and keep the Telegram bot as a companion channel.</p>
+                <p>Online quiz preparation platform for revision, premium practice access, and secure website-first learning.</p>
             </div>
             <div>
                 <h3>Support</h3>
-                <p><a href="https://t.me/QuizPathshala_bot" target="_blank" rel="noopener">Telegram: @QuizPathshala_bot</a></p>
-                <p><a href="https://t.me/QuizPathshala_bot" target="_blank" rel="noopener">Link: https://t.me/QuizPathshala_bot</a></p>
+                <p><a href="{{ support_telegram }}" target="_blank" rel="noopener">Telegram: @QuizPathshala_bot</a></p>
+                <p><a href="{{ support_telegram }}" target="_blank" rel="noopener">Companion support channel</a></p>
             </div>
             <div>
                 <h3>Quick Access</h3>
-                <p><a href="https://t.me/QuizPathshala_bot" target="_blank" rel="noopener">Start Quiz</a></p>
-                <p><a href="https://t.me/QuizPathshala_bot" target="_blank" rel="noopener">Open Telegram Bot</a></p>
+                <p><a href="{{ url_for('quiz.quiz_start') }}">Try Quiz Demo</a></p>
+                <p><a href="{{ url_for('premium.premium_page') }}">View Premium Plans</a></p>
             </div>
         </div>
     </footer>

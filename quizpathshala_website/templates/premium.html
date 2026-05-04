@@ -3,36 +3,54 @@
 {% block content %}
 <section class="page-hero">
     <div class="container narrow">
-        <span class="eyebrow">Premium</span>
-        <h1>Premium access for deeper preparation</h1>
+        <span class="eyebrow">Pricing & Premium</span>
+        <h1>Premium plans for deeper preparation</h1>
         <p>{{ premium_status }}</p>
     </div>
 </section>
 
 <section class="section">
-    <div class="container">
-        {% if payment_ready %}
-        <div class="card-grid">
-            {% for item in premium_prices %}
-            <article class="plan-card plan-card-large">
-                <p class="plan-tag">{{ item.key }}</p>
-                <h2>{{ item.name }}</h2>
-                <p class="plan-price">INR {{ "%.2f"|format(item.amount_rupees) }}</p>
-                <p>Premium unlocks full quiz access, longer preparation windows, and extended features.</p>
-                <a class="button button-primary" href="https://t.me/QuizPathshala_bot" target="_blank" rel="noopener">Buy {{ item.name }}</a>
-            </article>
-            {% endfor %}
+    <div class="container form-grid">
+        <div class="text-page">
+            <h2>What premium unlocks</h2>
+            <ul class="mini-list">
+                {% for benefit in premium_benefits %}
+                <li>{{ benefit }}</li>
+                {% endfor %}
+            </ul>
+            <p>Payments are processed securely through Razorpay from the website. Premium is never activated from the browser alone and becomes active only after server-side webhook verification.</p>
+            <p>Telegram remains available as a companion channel for support and continuity at <a href="{{ bot_url }}" target="_blank" rel="noopener">@QuizPathshala_bot</a>.</p>
         </div>
-        {% else %}
-        <div class="text-page narrow">
-            <h2>Payments not configured yet</h2>
-            <p>Razorpay checkout is currently unavailable because some required environment variables are missing.</p>
-            <p>{{ missing_payment_config|join(", ") }}</p>
-            <div class="hero-actions">
-                <a class="button button-primary" href="https://t.me/QuizPathshala_bot" target="_blank" rel="noopener">Open Telegram Bot</a>
+
+        <div class="catalog-card">
+            <h2>Choose a plan</h2>
+            <div class="card-grid pricing-grid">
+                {% for item in premium_prices %}
+                <article class="plan-card plan-card-large">
+                    <p class="plan-tag">{{ item.key }}</p>
+                    <h3>{{ item.name }}</h3>
+                    <p class="plan-price">INR {{ "%.2f"|format(item.amount_rupees) }}</p>
+                    <p>{{ "7 days" if item.key == "week_1" else "30 days" if item.key == "month_1" else "90 days" }}</p>
+                    <p>Secure website checkout through Razorpay.</p>
+                    {% if payment_ready %}
+                    <form method="post">
+                        <input type="hidden" name="plan_type" value="{{ item.key }}">
+                        <button class="button button-primary" type="submit">Buy Now</button>
+                    </form>
+                    {% else %}
+                    <button class="button button-primary" type="button" disabled>Checkout Unavailable</button>
+                    {% endif %}
+                </article>
+                {% endfor %}
             </div>
+            {% if not payment_ready %}
+            <div class="text-page trust-note">
+                <h3>Payments not configured yet</h3>
+                <p>Razorpay checkout is currently unavailable because some required environment variables are missing.</p>
+                <p>{{ missing_payment_config|join(", ") }}</p>
+            </div>
+            {% endif %}
         </div>
-        {% endif %}
     </div>
 </section>
 {% endblock %}

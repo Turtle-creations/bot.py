@@ -16,16 +16,17 @@
             <p>{{ section }}</p>
             {% endfor %}
             <div class="hero-actions">
-                <a class="button button-primary" href="https://t.me/QuizPathshala_bot" target="_blank" rel="noopener">Contact Support</a>
+                <a class="button button-secondary" href="{{ bot_url }}" target="_blank" rel="noopener">Open Telegram Companion</a>
             </div>
         </div>
-        <div class="form-card">
-            <h2>Support on Telegram</h2>
-            <p>For quiz access, premium help, or any questions, message the official QuizPathshala bot directly.</p>
-            <div class="hero-actions">
-                <a class="button button-primary" href="https://t.me/QuizPathshala_bot" target="_blank" rel="noopener">Help on Telegram</a>
-            </div>
-        </div>
+        <form method="post" class="form-card">
+            <h2>Send a support request</h2>
+            <label for="full_name">Your name</label>
+            <input id="full_name" name="full_name" type="text" value="{{ user.full_name }}">
+            <label for="message">Message</label>
+            <textarea id="message" name="message" rows="6" placeholder="Describe your issue, payment question, or support request"></textarea>
+            <button class="button button-primary" type="submit">Submit Support Request</button>
+        </form>
     </div>
 </section>
 {% endblock %}

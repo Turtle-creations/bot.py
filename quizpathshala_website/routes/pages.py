@@ -1,7 +1,7 @@
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 
 from config import BOT_URL, CANONICAL_URL, SITE_NAME, SITE_TAGLINE, SUPPORT_HOURS, SUPPORT_TELEGRAM
-from services.site_content import FEATURE_ITEMS, LEGAL_PAGES
+from services.site_content import ABOUT_PAGE, FEATURE_ITEMS, LEGAL_PAGES, PLATFORM_PILLARS
 from services.web_admin_service import web_admin_service
 from services.web_identity_service import web_identity_service
 from services.web_quiz_service import web_quiz_service
@@ -20,6 +20,7 @@ def _shared_context() -> dict:
         "support_telegram": SUPPORT_TELEGRAM,
         "canonical_url": CANONICAL_URL,
         "features": FEATURE_ITEMS,
+        "platform_pillars": PLATFORM_PILLARS,
         "user": user,
         "catalog": web_quiz_service.list_exam_catalog(user["user_id"]),
         "admin_authenticated": web_identity_service.is_admin_authenticated(),
@@ -35,6 +36,11 @@ def home():
         return redirect(url_for("pages.home"))
 
     return render_template("home.html", **_shared_context(), page_title="Home")
+
+
+@pages_blueprint.route("/about")
+def about():
+    return render_template("about.html", **_shared_context(), page_title=ABOUT_PAGE["title"], page=ABOUT_PAGE)
 
 
 @pages_blueprint.route("/contact", methods=["GET", "POST"])
@@ -56,8 +62,10 @@ def contact():
         "title": "Contact & Support",
         "intro": "Need help with quiz access, premium status, or general support? Reach out directly and the QuizPathshala team can review your request.",
         "sections": [
+            "QuizPathshala website is the primary learning platform for quiz practice and premium access.",
+            "Telegram is available as a companion channel for support and continuity.",
             "Telegram: @QuizPathshala_bot",
-            f"Link: {SUPPORT_TELEGRAM}",
+            f"Telegram link: {SUPPORT_TELEGRAM}",
             f"Support hours: {SUPPORT_HOURS}",
         ],
     }

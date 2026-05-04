@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-hero">
+    <div class="container narrow">
+        <span class="eyebrow">About Us</span>
+        <h1>{{ page.title }}</h1>
+        <p>{{ page.intro }}</p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container form-grid">
+        <div class="text-page">
+            {% for section in page.sections %}
+            <p>{{ section }}</p>
+            {% endfor %}
+        </div>
+        <div class="form-card">
+            <h2>What we are building</h2>
+            <p>QuizPathshala is built as a business-ready online quiz preparation platform with secure payments, policy transparency, and companion support channels.</p>
+            <div class="hero-actions">
+                <a class="button button-primary" href="{{ url_for('quiz.quiz_start') }}">Try Quiz Demo</a>
+                <a class="button button-secondary" href="{{ url_for('premium.premium_page') }}">View Premium Plans</a>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="section section-contrast">
+    <div class="container">
+        <div class="section-heading">
+            <span class="eyebrow">Why QuizPathshala</span>
+            <h2>Built for trust, growth, and real learners</h2>
+        </div>
+        <div class="card-grid pillars-grid">
+            {% for item in platform_pillars %}
+            <article class="info-card">
+                <h3>{{ item.title }}</h3>
+                <p>{{ item.description }}</p>
+            </article>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endblock %}
