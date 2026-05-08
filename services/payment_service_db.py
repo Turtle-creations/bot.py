@@ -262,9 +262,16 @@ class PaymentService:
         with database.connection() as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO payment_orders (
+                INSERT INTO payment_orders (
                     order_id, user_id, plan_type, amount, currency, status, payment_url, created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(order_id) DO UPDATE SET
+                    user_id = excluded.user_id,
+                    plan_type = excluded.plan_type,
+                    amount = excluded.amount,
+                    currency = excluded.currency,
+                    status = excluded.status,
+                    payment_url = excluded.payment_url
                 """,
                 (
                     order_id,
@@ -687,10 +694,20 @@ class PaymentService:
             )
             conn.execute(
                 """
-                INSERT OR REPLACE INTO payments (
+                INSERT INTO payments (
                     payment_id, order_id, user_id, plan_type, amount, currency, status,
                     timestamp, expiry_date, raw_payload
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(payment_id) DO UPDATE SET
+                    order_id = excluded.order_id,
+                    user_id = excluded.user_id,
+                    plan_type = excluded.plan_type,
+                    amount = excluded.amount,
+                    currency = excluded.currency,
+                    status = excluded.status,
+                    timestamp = excluded.timestamp,
+                    expiry_date = excluded.expiry_date,
+                    raw_payload = excluded.raw_payload
                 """,
                 (
                     payment_id,

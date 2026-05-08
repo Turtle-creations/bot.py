@@ -130,15 +130,7 @@ def _fetch_user_row_for_debug(user_id: int | None) -> dict | None:
 
 
 def _users_table_exists_for_debug() -> bool:
-    with database.connection() as conn:
-        row = conn.execute(
-            """
-            SELECT name
-            FROM sqlite_master
-            WHERE type = 'table' AND name = 'users'
-            """
-        ).fetchone()
-    return bool(row)
+    return database.table_exists("users")
 
 
 def _format_add_admin_debug_message(debug: dict) -> str:

@@ -16,17 +16,7 @@ logger = get_logger(__name__)
 
 class ExamService:
     def exam_storage_ready(self) -> bool:
-        with database.connection() as conn:
-            required_tables = {"exams", "exam_sets", "questions"}
-            rows = conn.execute(
-                """
-                SELECT name
-                FROM sqlite_master
-                WHERE type = 'table'
-                AND name IN ('exams', 'exam_sets', 'questions')
-                """
-            ).fetchall()
-        return {row["name"] for row in rows} == required_tables
+        return database.tables_exist({"exams", "exam_sets", "questions"})
 
     def invalidate_cache(self):
         self.get_exams.cache_clear()

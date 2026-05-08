@@ -5,7 +5,26 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 IMAGE_DIR = DATA_DIR / "images"
-DATABASE_PATH = DATA_DIR / "quiz_bot_v2.db"
+DATABASE_URL = (os.getenv("DATABASE_URL") or "").strip()
+_db_path_env = (os.getenv("DB_PATH") or "").strip()
+_legacy_shared_database_env = (os.getenv("QUIZPATHSHALA_SHARED_DB") or "").strip()
+_legacy_shared_data_dir_env = (os.getenv("QUIZPATHSHALA_SHARED_DATA_DIR") or "").strip()
+
+if DATABASE_URL:
+    DATABASE_BACKEND = "postgres"
+    DATABASE_PATH = None
+    DATABASE_DSN = DATABASE_URL
+else:
+    DATABASE_BACKEND = "sqlite"
+    if _db_path_env:
+        DATABASE_PATH = Path(_db_path_env).expanduser().resolve()
+    elif _legacy_shared_database_env:
+        DATABASE_PATH = Path(_legacy_shared_database_env).expanduser().resolve()
+    elif _legacy_shared_data_dir_env:
+        DATABASE_PATH = Path(_legacy_shared_data_dir_env).expanduser().resolve() / "quiz_bot_v2.db"
+    else:
+        DATABASE_PATH = DATA_DIR / "quiz_bot_v2.db"
+    DATABASE_DSN = str(DATABASE_PATH)
 
 
 def _read_admin_ids(raw_value: str) -> list[int]:

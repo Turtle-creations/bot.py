@@ -29,14 +29,7 @@ def parse_utc_datetime(value: str | None) -> datetime | None:
 
 class UserService:
     def admin_storage_ready(self) -> bool:
-        with database.connection() as conn:
-            row = conn.execute(
-                """
-                SELECT name FROM sqlite_master
-                WHERE type = 'table' AND name = 'users'
-                """
-            ).fetchone()
-        return bool(row)
+        return database.table_exists("users")
 
     def initialize_admin_storage(self):
         logger.info(

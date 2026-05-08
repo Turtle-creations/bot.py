@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import time
+from pathlib import Path
 from queue import Empty, Full, Queue
 from threading import Thread
 
@@ -15,6 +16,7 @@ from utils.logging_utils import get_logger
 
 
 logger = get_logger(__name__)
+BASE_DIR = Path(__file__).resolve().parent
 SITE_NAME = "QuizPathshala"
 SITE_TAGLINE = "Online quiz preparation platform via Telegram bot"
 SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "quizpathshala.help@gmail.com")
@@ -24,8 +26,8 @@ CANONICAL_URL = (os.environ.get("CANONICAL_URL") or PUBLIC_BASE_URL or "").rstri
 
 app = Flask(
     __name__,
-    template_folder="quizpathshala_website/website/templates",
-    static_folder="quizpathshala_website/website/static",
+    template_folder=str(BASE_DIR / "quizpathshala_website" / "templates"),
+    static_folder=str(BASE_DIR / "quizpathshala_website" / "static"),
 )
 _TELEGRAM_QUEUE_MAX_SIZE = 1000
 _TELEGRAM_QUEUE: Queue[dict] = Queue(maxsize=_TELEGRAM_QUEUE_MAX_SIZE)
@@ -51,6 +53,7 @@ def inject_site_context():
         "support_hours": SUPPORT_HOURS,
         "support_telegram": SUPPORT_TELEGRAM or _resolve_bot_link(),
         "canonical_url": CANONICAL_URL,
+        "admin_authenticated": False,
     }
 
 
@@ -60,6 +63,10 @@ def _build_simple_page(title: str, intro: str, *sections: str) -> dict[str, obje
         "intro": intro,
         "sections": list(sections),
     }
+
+
+def _default_user() -> dict[str, str]:
+    return {"full_name": ""}
 
 
 def _admin_chat_ids() -> list[int]:
@@ -251,6 +258,27 @@ def home():
     return render_template("home.html", page_title="Home")
 
 
+@app.route("/about", methods=["GET"])
+def about():
+    page = _build_simple_page(
+        "About QuizPathshala",
+        "QuizPathshala is a website-first quiz preparation experience connected to the Telegram companion bot.",
+        "Students can explore quiz practice, premium plans, and support resources through a simpler and more trustworthy web experience.",
+        "Premium access and payment verification continue to follow the existing secure Razorpay and webhook flow.",
+    )
+    platform_pillars = [
+        {"title": "Focused Practice", "description": "Learners can access structured quiz flows designed for consistent exam preparation."},
+        {"title": "Secure Payments", "description": "Premium activation is tied to verified payment events rather than client-side assumptions."},
+        {"title": "Companion Support", "description": "Telegram remains available for continuity, support, and learner communication."},
+    ]
+    return render_template(
+        "about.html",
+        page_title=page["title"],
+        page=page,
+        platform_pillars=platform_pillars,
+    )
+
+
 @app.route("/quiz", methods=["GET"])
 def quiz_page():
     page = _build_simple_page(
@@ -303,7 +331,19 @@ def refund():
 
 @app.route("/contact", methods=["GET"])
 def contact():
-    return render_template("contact.html", page_title="Contact")
+    page = _build_simple_page(
+        "Contact & Support",
+        "Need help with quiz access, premium status, or general support? Reach out and the QuizPathshala team can review your request.",
+        "QuizPathshala website is the primary learning platform for quiz practice and premium access.",
+        "Telegram is available as a companion channel for support and continuity.",
+        f"Support hours: {SUPPORT_HOURS}",
+    )
+    return render_template(
+        "contact.html",
+        page_title=page["title"],
+        page=page,
+        user=_default_user(),
+    )
 
 
 @app.route("/health", methods=["GET"])
